@@ -1168,3 +1168,109 @@ table.box tr.totals th {
 .in-pip .content {
   padding-bottom: 6px;
 }
+
+/* ------------------------------------------------------------------- odds */
+
+.odds-line {
+  margin-top: 6px;
+  line-height: 1.6;
+  font-size: 11px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.odds-line b {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.book {
+  display: inline-block;
+  margin-right: 5px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: #1d3b2a;
+  color: #61e294;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 15px;
+}
+
+.live-tag {
+  display: inline-block;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: rgb(255 77 79 / 0.16);
+  color: var(--live);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  line-height: 15px;
+}
+
+.odds-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.book-badge {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #1d3b2a;
+  color: #61e294;
+  font-weight: 800;
+}
+
+.odds-table th:first-child {
+  text-align: left;
+  font-weight: 700;
+}
+
+.odds-table tbody th {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.odds-table td {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.odds-table td small {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.odds-sub {
+  margin-top: 10px;
+  font-size: 11px;
+}
+
+.odds-sub + .winprob {
+  margin-top: 4px;
+}
+
+.odds-link {
+  display: inline-block;
+  margin-top: 12px;
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.odds-link:hover {
+  text-decoration: underline;
+}
+
+.rg {
+  margin: 12px 0 4px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+}

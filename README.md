@@ -1,6 +1,6 @@
 # Courtside: live scores overlay for Chrome
 
-Courtside is a Chrome extension that shows live scores, box scores and player stats for the **NFL, NBA, MLB, NHL and college football (FBS)**. You can float it over the game you're watching.
+Courtside is a Chrome extension that shows live scores, box scores, player stats and **live DraftKings odds** for the **NFL, NBA, MLB, NHL and college football (FBS)**. You can float it over the game you're watching.
 
 <p>
   <img src="docs/screenshots/overlay.png" alt="Scores overlaid on a video page" width="640" />
@@ -24,7 +24,8 @@ Your place (league, open game, tab) carries over between all three views.
 - Football: down and distance, a possession marker, and a red-zone flag.
 - Baseball: base runners on a diamond, balls-strikes and outs, and the current batter. Probable pitchers show before the game.
 - Game leaders (passing, rushing and receiving; points; and so on), plus the last play.
-- TV network, betting line, playoff series status and game notes (for example "SEC Game of the Week").
+- **DraftKings odds** on every upcoming and live game: spread, total and both moneylines, updated during play (marked **LIVE**, or "suspended" while DraftKings has betting paused).
+- TV network, playoff series status and game notes (for example "SEC Game of the Week").
 - Browse by week for football (including preseason and postseason) and by day for the NBA, MLB and NHL. College football can be filtered to the **Top 25**.
 
 **Game detail** (click any game)
@@ -34,6 +35,7 @@ Your place (league, open game, tab) carries over between all three views.
 - **Team stats** side by side with comparison bars.
 - **Plays**: the latest plays, with scoring plays highlighted.
 - **Scoring summary**, grouped by period.
+- **Odds**: DraftKings spread, total and moneyline with prices for both teams, the win chance implied by the moneyline (with the bookmaker's margin removed), the opening line, and a link to the game on DraftKings.
 - **Leaders**, with headshots.
 - **Info**: venue, TV, attendance, line and series.
 
@@ -42,7 +44,7 @@ Your place (league, open game, tab) carries over between all three views.
 - The toolbar badge shows **LIVE** while one of your teams is playing.
 - Optional desktop alerts when your team's game starts, when either team scores, and at the final whistle. Clicking an alert opens that game.
 
-**Settings**: compact scoreboard, hide finished games, refresh rate for live games (10 to 60 seconds), and alerts on or off.
+**Settings**: compact scoreboard, hide finished games, DraftKings odds on or off, refresh rate for live games (10 to 60 seconds), and alerts on or off.
 
 Live games refresh automatically (every 15 seconds by default). Updates slow down when nothing is live and pause while the view is hidden.
 
@@ -71,15 +73,24 @@ To build a zip for the Chrome Web Store, run `npm run package`. The zip is writt
 | Permission | Why |
 |---|---|
 | `activeTab`, `scripting` | Add the overlay to the tab you're on, only when you ask. There is no access to any site until you click or press the shortcut. |
-| `https://site.api.espn.com/*` | Fetch scores and stats |
+| `https://site.api.espn.com/*` | Fetch scores, stats and ESPN's odds |
+| `https://sportsbook-nash.draftkings.com/*` | Fetch live DraftKings odds |
 | `storage` | Settings, favorites, overlay position |
 | `alarms`, `notifications` | Watch your favorite teams in the background and send score alerts |
 
-There is no tracking and no account. All data goes straight from your browser to ESPN.
+There is no tracking and no account. All data goes straight from your browser to ESPN and DraftKings.
 
 ## Data source
 
 Scores and stats come from ESPN's public site API (`site.api.espn.com/apis/site/v2/sports/...`). It is free and needs no key, but it is **unofficial and undocumented**, so ESPN could change or rate-limit it. All ESPN-specific parsing is in [`src/lib/espn.js`](src/lib/espn.js), which turns each response into a small, stable format. If ESPN changes something, that file is the only one to update.
+
+### Odds
+
+DraftKings has no public API. Live odds come from the JSON feed that DraftKings Sportsbook's own website loads (`sportsbook-nash.draftkings.com/api/sportscontent/...`), fetched once per league and matched to ESPN's games by team name and start time. That feed is **unofficial**: DraftKings can change it, block it, or restrict it by region at any time.
+
+If the feed fails, Courtside falls back to the DraftKings lines ESPN publishes (DraftKings is ESPN's odds provider), and the Odds tab says so. ESPN's lines don't update during games, so the fallback only covers upcoming games. A failed DraftKings request is retried after two minutes. The odds code is in [`src/lib/odds.js`](src/lib/odds.js).
+
+Odds are shown for information only. Courtside doesn't place bets or link to your account. 21+. Gambling problem? Call 1-800-GAMBLER.
 
 ## Project layout
 
@@ -90,6 +101,7 @@ src/content/overlay.js   Injected on demand; draggable, resizable shadow-DOM fra
 src/app/app.html|css|js  The UI; one page runs as popup, overlay (?mode=overlay) or window (?mode=window)
 src/app/tick-worker.js   Refresh timer that isn't throttled when the window is hidden
 src/lib/espn.js          ESPN response → normalized games/box scores (pure functions)
+src/lib/odds.js          DraftKings feed and ESPN odds → one odds format; event matching
 src/lib/api.js           Fetching with timeouts
 src/lib/leagues.js       League definitions and period labels
 src/lib/storage.js       Settings, favorites, UI state
@@ -101,18 +113,18 @@ There is no build step: plain ES modules that Chrome loads directly.
 ## Tests
 
 ```sh
-npm test            # unit tests for the ESPN normalizers (Node 20+)
+npm test            # unit tests for the ESPN and odds parsers (Node 20+)
 npm run test:e2e    # loads the extension in Chromium with Playwright, using fixture data
 ```
 
-The end-to-end run fills in for ESPN with the fixtures in `tests/fixtures/espn.js`. It then exercises every league, game detail tabs, favorites and the badge, settings, error recovery, the overlay (drag, resize, transparency, minimize, fullscreen, toggle) and the pop-out window. Screenshots are saved to `tests/e2e/screenshots/`.
+The end-to-end run fills in for ESPN and DraftKings with the fixtures in `tests/fixtures/espn.js`. It then exercises every league, odds (including the ESPN fallback when DraftKings is blocked), game detail tabs, favorites and the badge, settings, error recovery, the overlay (drag, resize, transparency, minimize, fullscreen, toggle) and the pop-out window. Screenshots are saved to `tests/e2e/screenshots/`.
 
 ## Screenshots
 
 | Scoreboard | Game detail | Baseball |
 |---|---|---|
 | ![](docs/screenshots/popup-nfl.png) | ![](docs/screenshots/game-nfl-box.png) | ![](docs/screenshots/game-mlb.png) |
-| **College football** | **Team stats** | **Settings** |
-| ![](docs/screenshots/popup-cfb.png) | ![](docs/screenshots/game-nfl-team.png) | ![](docs/screenshots/settings.png) |
+| **College football** | **Team stats** | **DraftKings odds** |
+| ![](docs/screenshots/popup-cfb.png) | ![](docs/screenshots/game-nfl-team.png) | ![](docs/screenshots/game-nfl-odds.png) |
 
 The team logos in these screenshots are placeholders from the test fixtures. The real extension shows each team's actual logo from ESPN.

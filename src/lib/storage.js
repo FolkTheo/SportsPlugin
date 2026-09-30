@@ -8,6 +8,7 @@ export const DEFAULT_SETTINGS = {
   cfbTop25Only: false,
   compact: false,
   hideFinal: false,
+  showOdds: true,
 };
 
 export const DEFAULT_UI = {

@@ -4,8 +4,9 @@
 //   window  – the pop-out window, which can also float on top via Document PiP
 
 import { LEAGUES, LEAGUE_ORDER } from '../lib/leagues.js';
-import { fetchScoreboard, fetchSummary } from '../lib/api.js';
+import { fetchDraftKingsOdds, fetchScoreboard, fetchSummary } from '../lib/api.js';
 import { sortGames } from '../lib/espn.js';
+import { matchDraftKings, mergeOdds, noVigProbabilities } from '../lib/odds.js';
 import * as store from '../lib/storage.js';
 
 const MODE = new URLSearchParams(location.search).get('mode') || 'window';
@@ -20,6 +21,8 @@ const state = {
   weekQuery: null,
   scoreboard: null, // { key, games, week }
   summary: null,
+  dkOdds: new Map(), // gameId -> DraftKings odds
+  oddsError: null,
   preview: null, // scoreboard game shown while its summary loads
   boxSide: 'away',
   loading: false,
@@ -222,6 +225,38 @@ async function load({ quiet = false } = {}) {
   state.loading = false;
   render();
   schedule();
+  if (!state.error) refreshOdds(seq);
+}
+
+// DraftKings lines load after the scores so a slow or blocked sportsbook
+// request never holds up the scoreboard. ESPN's odds show in the meantime.
+async function refreshOdds(seq) {
+  if (!state.settings.showOdds) return;
+  const games = (state.ui.view === 'game' ? [state.summary] : state.scoreboard?.games || []).filter(
+    (g) => g && g.status.state !== 'post',
+  );
+  const leagues = [...new Set(games.map((g) => g.league))];
+  if (!leagues.length) return;
+  const results = await Promise.allSettled(leagues.map((l) => fetchDraftKingsOdds(l)));
+  if (seq !== loadSeq) return;
+  state.oddsError = null;
+  results.forEach((r, i) => {
+    const leagueGames = games.filter((g) => g.league === leagues[i]);
+    for (const g of leagueGames) state.dkOdds.delete(g.id);
+    if (r.status === 'fulfilled') {
+      for (const [id, odds] of matchDraftKings(leagueGames, r.value)) state.dkOdds.set(id, odds);
+    } else {
+      state.oddsError = r.reason?.message || 'DraftKings odds unavailable';
+    }
+  });
+  render();
+}
+
+function oddsFor(game) {
+  if (!state.settings.showOdds || !game) return null;
+  // Once a game ends, show ESPN's closing line rather than a stale live one.
+  if (game.status.state === 'post') return game.odds;
+  return mergeOdds(state.dkOdds.get(game.id), game.odds);
 }
 
 // ---------------------------------------------------------------------------
@@ -407,7 +442,6 @@ function gameCard(game) {
   const meta = [];
   if (s.state === 'pre') {
     if (game.broadcast) meta.push(esc(game.broadcast));
-    if (game.odds?.details && !compact) meta.push(esc(game.odds.details));
   }
   const note = game.note || game.series;
   const lastPlay = s.state === 'in' && game.situation?.lastPlay && !compact
@@ -426,8 +460,39 @@ function gameCard(game) {
       </div>
       ${compact ? '' : situationLine(game)}
       ${lastPlay}
+      ${compact ? '' : oddsLine(game)}
       ${compact ? '' : cardLeaders(game)}
     </button>`;
+}
+
+function bookLabel(odds) {
+  return /draft\s*kings/i.test(odds.provider) ? 'DK' : odds.provider;
+}
+
+// The favorite's spread, e.g. "KC -2.5" (or "PK").
+function spreadText(game, odds) {
+  const { away, home } = odds.spread;
+  if (away.line === 'PK' || home.line === 'PK') return 'PK';
+  const side = away.line.startsWith('-') ? 'away' : 'home';
+  return `<b>${esc(game[side].abbr)}</b> ${esc(odds.spread[side].line)}`;
+}
+
+function oddsLine(game) {
+  if (game.status.state === 'post') return '';
+  const o = oddsFor(game);
+  if (!o) return '';
+  const parts = [];
+  if (o.spread) parts.push(spreadText(game, o));
+  else if (o.details) parts.push(esc(o.details));
+  if (o.total?.line) parts.push(`O/U ${esc(o.total.line)}`);
+  if (o.moneyline) {
+    parts.push(`ML <b>${esc(game.away.abbr)}</b> ${esc(o.moneyline.away)} <b>${esc(game.home.abbr)}</b> ${esc(o.moneyline.home)}`);
+  }
+  if (!parts.length) return '';
+  const live = o.live && game.status.state === 'in';
+  return `<div class="odds-line" title="${esc(`${o.provider} odds${o.source === 'espn' ? ' via ESPN' : ''}`)}"><span class="book">${esc(bookLabel(o))}</span>${parts.join(
+    ' · ',
+  )}${live ? ' <span class="live-tag">LIVE</span>' : ''}${o.suspended ? ' <span class="muted">suspended</span>' : ''}</div>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -439,6 +504,7 @@ function gameTabs(g) {
   if (g.teamStats.some((s) => s.rows.length)) tabs.push(['team', 'Team Stats']);
   if (g.plays.length) tabs.push(['plays', 'Plays']);
   if (g.scoringPlays.length) tabs.push(['scoring', 'Scoring']);
+  if (oddsFor(g)) tabs.push(['odds', 'Odds']);
   if (g.leaders.length) tabs.push(['leaders', 'Leaders']);
   tabs.push(['info', 'Info']);
   return tabs;
@@ -551,6 +617,8 @@ function renderGameTab(g, tab) {
       return playsList(g);
     case 'scoring':
       return scoringList(g);
+    case 'odds':
+      return oddsPanel(g);
     case 'leaders':
       return leadersList(g);
     default:
@@ -685,6 +753,62 @@ function leadersList(g) {
     .join('');
 }
 
+function oddsPanel(g) {
+  const o = oddsFor(g);
+  const phase = g.status.state;
+  const live = o.live && phase === 'in';
+  const label = live ? '<span class="live-tag">LIVE</span>' : `<span class="muted">${phase === 'post' ? 'Closing line' : phase === 'in' ? 'Latest line' : 'Pre-game line'}</span>`;
+  const cell = (main, price) => (main ? `${esc(main)}${price ? `<small>${esc(price)}</small>` : ''}` : '—');
+  const row = (side) => {
+    const t = g[side];
+    const total = o.total ? cell(`${side === 'away' ? 'O' : 'U'} ${o.total.line}`, side === 'away' ? o.total.over : o.total.under) : '—';
+    return `<tr><th>${logo(t, 16)} ${esc(t.abbr)}</th><td>${o.spread ? cell(o.spread[side].line, o.spread[side].price) : '—'}</td><td>${total}</td><td>${
+      o.moneyline ? cell(o.moneyline[side]) : '—'
+    }</td></tr>`;
+  };
+
+  let implied = '';
+  const p = noVigProbabilities(o.moneyline);
+  if (p) {
+    const a = Math.round(p.away * 1000) / 10;
+    const h = Math.round((100 - a) * 10) / 10;
+    implied = `
+      <div class="odds-sub">Implied win chance <span class="muted">(moneyline, vig removed)</span></div>
+      <section class="winprob">
+        <span class="wp-label">${esc(g.away.abbr)} ${a}%</span>
+        <div class="wp-bar"><div style="width:${a}%;background:${esc(g.away.color || 'var(--accent)')}"></div><div style="width:${h}%;background:${esc(g.home.color || 'var(--muted)')}"></div></div>
+        <span class="wp-label">${h}% ${esc(g.home.abbr)}</span>
+      </section>`;
+  }
+
+  let open = '';
+  if (o.open) {
+    const bits = [];
+    if (o.open.spread) {
+      const side = o.open.spread.away.startsWith('-') ? 'away' : 'home';
+      bits.push(`${g[side].abbr} ${o.open.spread[side]}`);
+    }
+    if (o.open.total) bits.push(`O/U ${o.open.total}`);
+    if (o.open.moneyline) bits.push(`ML ${g.away.abbr} ${o.open.moneyline.away} / ${g.home.abbr} ${o.open.moneyline.home}`);
+    if (bits.length) open = `<div class="odds-sub">Opened: ${esc(bits.join(' · '))}</div>`;
+  }
+
+  const source =
+    o.source === 'espn'
+      ? `<div class="odds-sub muted">${esc(o.provider)} line via ESPN${state.oddsError && phase !== 'post' ? '. The DraftKings live feed is unavailable right now.' : '.'}</div>`
+      : '';
+
+  return `
+    <div class="odds-head"><span class="book-badge">${esc(o.provider)}</span>${label}${o.suspended ? '<span class="muted">Betting suspended</span>' : ''}</div>
+    <div class="table-wrap"><table class="odds-table">
+      <thead><tr><th></th><th>Spread</th><th>Total</th><th>Moneyline</th></tr></thead>
+      <tbody>${row('away')}${row('home')}</tbody>
+    </table></div>
+    ${implied}${open}${source}
+    ${o.url ? `<a class="odds-link" href="${esc(o.url)}" target="_blank" rel="noopener noreferrer">Open this game on DraftKings ↗</a>` : ''}
+    <p class="rg">Odds are for information only and can change at any moment. 21+. Gambling problem? Call 1-800-GAMBLER.</p>`;
+}
+
 function gameInfo(g) {
   const rows = [];
   const d = new Date(g.date);
@@ -692,8 +816,6 @@ function gameInfo(g) {
   if (g.venue) rows.push(['Venue', g.venue + (g.venueCity ? `, ${g.venueCity}` : '')]);
   if (g.broadcast || state.preview?.broadcast) rows.push(['TV', g.broadcast || state.preview.broadcast]);
   if (g.attendance) rows.push(['Attendance', Number(g.attendance).toLocaleString()]);
-  const odds = state.preview?.id === g.id ? state.preview.odds : null;
-  if (odds?.details) rows.push(['Line', odds.details + (odds.overUnder ? ` · O/U ${odds.overUnder}` : '')]);
   if (g.series) rows.push(['Series', g.series]);
   rows.push(['Status', g.status.longDetail]);
   return `<dl class="info">${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>`;
@@ -721,6 +843,7 @@ function renderSettings() {
       <h3>Display</h3>
       ${check('compact', 'Compact scoreboard', 'Just teams, scores and clock — best for small overlays')}
       ${check('hideFinal', 'Hide finished games')}
+      ${check('showOdds', 'Show DraftKings odds', 'Spread, total and moneyline on each game, updated live during play')}
       ${check('cfbTop25Only', 'College football: Top 25 only')}
       <h3>Updates</h3>
       <label class="set-row"><span>Live refresh every</span>
@@ -919,6 +1042,7 @@ async function init() {
       state.settings = { ...store.DEFAULT_SETTINGS, ...(changes.settings.newValue || {}) };
       if (before.refreshSeconds !== state.settings.refreshSeconds) schedule();
       render();
+      if (!before.showOdds && state.settings.showOdds) load({ quiet: true });
     }
     if (area === 'sync' && changes.favorites) {
       state.favorites = changes.favorites.newValue || [];

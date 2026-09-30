@@ -3,6 +3,7 @@
 // sport and by game state, and fields come and go without notice.
 
 import { LEAGUES, periodLabel } from './leagues.js';
+import { oddsFromEspn } from './odds.js';
 
 const API_ROOT = 'https://site.api.espn.com/apis/site/v2/sports';
 
@@ -87,6 +88,7 @@ export function normalizeCompetitor(c = {}) {
     abbr: team.abbreviation || team.shortDisplayName || '',
     name: team.shortDisplayName || team.name || team.displayName || '',
     fullName: team.displayName || team.name || '',
+    nickname: team.name || '',
     location: team.location || '',
     logo: logoOf(team),
     color: team.color ? `#${team.color}` : '',
@@ -214,7 +216,6 @@ export function normalizeEvent(event, leagueId) {
       .map((b) => b.media?.shortName)
       .filter(Boolean)
       .join(', ');
-  const odds = arr(comp.odds)[0];
 
   return {
     id: str(event.id),
@@ -231,7 +232,7 @@ export function normalizeEvent(event, leagueId) {
     leaders: gameLeaders(comp, home, away),
     probables: league.sport === 'baseball' ? probablePitchers(comp, home, away) : [],
     broadcast,
-    odds: odds ? { details: str(odds.details), overUnder: str(odds.overUnder) } : null,
+    odds: oddsFromEspn(comp.odds),
     venue: comp.venue?.fullName || '',
     note: arr(comp.notes)[0]?.headline || '',
     series: comp.series?.summary || '',
@@ -508,5 +509,6 @@ export function normalizeSummary(json, leagueId) {
       .join(', '),
     note: arr(comp.notes)[0]?.headline || '',
     series: comp.series?.summary || '',
+    odds: oddsFromEspn(arr(json?.pickcenter).length ? json.pickcenter : json?.odds),
   };
 }

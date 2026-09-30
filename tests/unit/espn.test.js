@@ -47,7 +47,9 @@ test('NFL scoreboard: teams, live situation, possession, leaders', () => {
 
   const pre = games[2];
   assert.equal(pre.broadcast, 'ESPN, ABC');
-  assert.deepEqual(pre.odds, { details: 'SF -2.5', overUnder: '44.5' });
+  assert.equal(pre.odds.provider, 'DraftKings');
+  assert.equal(pre.odds.details, 'SF -2.5');
+  assert.equal(final.odds, null);
 
   assert.equal(week.label, 'Week 4');
   assert.equal(week.detail, 'Sep 24-30');

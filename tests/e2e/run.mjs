@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import assert from 'node:assert/strict';
 
-import { fixtureFor } from '../fixtures/espn.js';
+import { dkFixtureFor, fixtureFor } from '../fixtures/espn.js';
 
 // Lets context.route() also answer the background service worker's fetches.
 process.env.PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS = '1';
@@ -62,6 +62,13 @@ await context.route('https://site.api.espn.com/**', (route) => {
   if (!body) return route.fulfill({ status: 404, body: '{}' });
   return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(body) });
 });
+let dkBlocked = false;
+await context.route('https://sportsbook-nash.draftkings.com/**', (route) => {
+  requests.push(route.request().url());
+  if (dkBlocked) return route.fulfill({ status: 403, body: 'Access Denied' });
+  const body = dkFixtureFor(route.request().url());
+  return route.fulfill({ status: body ? 200 : 404, contentType: 'application/json', body: JSON.stringify(body || {}) });
+});
 await context.route('https://a.espncdn.com/**', (route) =>
   route.fulfill({ status: 200, contentType: 'image/svg+xml', body: teamLogoSvg(route.request().url()) }),
 );
@@ -105,6 +112,11 @@ await step('popup renders NFL scoreboard with live game first', async () => {
   const first = await popup.locator('.game').first().innerText();
   assert.match(first, /Chiefs[\s\S]*24[\s\S]*Bills[\s\S]*20/);
   assert.match(first, /2nd & 7 · Red zone/);
+  // DraftKings live lines arrive just after the scores.
+  await popup.waitForSelector('.game.state-in .odds-line .live-tag');
+  assert.match(await popup.locator('.game.state-in .odds-line').innerText(), /^DK\s*KC -3\.5 · O\/U 51\.5 · ML KC -180 BUF \+150\s*LIVE$/);
+  assert.match(await popup.locator('.game.state-pre .odds-line').innerText(), /^DK\s*SF -2\.5 · O\/U 44\.5 · ML SF -135 SEA \+115$/);
+  assert.equal(await popup.locator('.game.state-post .odds-line').count(), 0);
   assert.match(await popup.locator('.sub-label').innerText(), /Week 4/);
   assert.equal(await popup.locator('.game').count(), 3);
   await popup.screenshot({ path: `${SHOTS}/popup-nfl.png` });
@@ -167,11 +179,11 @@ await step('NFL game detail: every tab renders', async () => {
   await popup.click('.game.state-in');
   await popup.waitForSelector('.gv-tabs');
   const tabs = await popup.locator('.gv-tab').allInnerTexts();
-  assert.deepEqual(tabs, ['Box Score', 'Team Stats', 'Plays', 'Scoring', 'Leaders', 'Info']);
+  assert.deepEqual(tabs, ['Box Score', 'Team Stats', 'Plays', 'Scoring', 'Odds', 'Leaders', 'Info']);
   assert.match(await popup.locator('.game-situation').innerText(), /KC · 2nd & 7 · Red zone/);
   assert.match(await popup.locator('.winprob').innerText(), /KC 61\.8%[\s\S]*38\.2% BUF/);
   await popup.screenshot({ path: `${SHOTS}/game-nfl-box.png` });
-  for (const tab of ['team', 'plays', 'scoring', 'leaders', 'info']) {
+  for (const tab of ['team', 'plays', 'scoring', 'odds', 'leaders', 'info']) {
     await popup.click(`[data-action="game-tab"][data-tab="${tab}"]`);
     await popup.waitForSelector(`.gv-tab.active[data-tab="${tab}"]`);
     await popup.screenshot({ path: `${SHOTS}/game-nfl-${tab}.png` });
@@ -206,9 +218,35 @@ await step('favorite a team → ★ Mine tab', async () => {
   assert.equal(badge, 'LIVE');
 });
 
+await step('Odds tab: DraftKings live lines, implied chance, ESPN opener', async () => {
+  await popup.click('.tab[data-league="nfl"]');
+  await popup.click('.game.state-in');
+  await popup.click('[data-action="game-tab"][data-tab="odds"]');
+  await popup.waitForSelector('.odds-head .live-tag');
+  const text = await popup.locator('.gv-body').innerText();
+  assert.match(text, /DraftKings\s*LIVE/);
+  assert.match(text, /KC\s+-3\.5\s+-115\s+O 51\.5\s+-110\s+-180/);
+  assert.match(text, /BUF\s+\+3\.5\s+-105\s+U 51\.5\s+-110\s+\+150/);
+  assert.match(text, /KC 61\.6%[\s\S]*38\.4% BUF/);
+  assert.match(text, /Opened: KC -2\.5 · O\/U 49\.5 · ML KC -150 \/ BUF \+130/);
+  assert.match(text, /1-800-GAMBLER/);
+  assert.equal(await popup.locator('.odds-link').getAttribute('href'), 'https://sportsbook.draftkings.com/event/32001');
+  await popup.waitForSelector('.toast', { state: 'hidden' });
+  await popup.locator('.content').evaluate((el) => (el.scrollTop = el.scrollHeight));
+  await popup.screenshot({ path: `${SHOTS}/game-nfl-odds.png` });
+  await popup.click('[data-action="back"]');
+});
+
+await step('NBA suspended live market is flagged', async () => {
+  await popup.click('.tab[data-league="nba"]');
+  await popup.waitForSelector('.game.state-in .odds-line');
+  assert.match(await popup.locator('.game.state-in .odds-line').innerText(), /NY \+105 BOS -125\s*LIVE\s*suspended/);
+});
+
 await step('NBA game detail: starters/bench, DNP row', async () => {
   await popup.click('.tab[data-league="nba"]');
   await popup.click('.game.state-in');
+  await popup.click('[data-action="game-tab"][data-tab="box"]');
   await popup.waitForSelector('table.box');
   assert.equal(await popup.locator('tr.bench-start').count(), 1);
   assert.match(await popup.locator('td.dnp').innerText(), /COACH'S DECISION/);
@@ -226,7 +264,11 @@ await step('NHL final + CFB halftime detail', async () => {
   await popup.click('.tab[data-league="cfb"]');
   await popup.click('.game.state-in');
   await popup.waitForSelector('.gv-tabs');
-  assert.deepEqual(await popup.locator('.gv-tab').allInnerTexts(), ['Info']);
+  // DraftKings lists this game reversed; its lines are flipped to ESPN's sides.
+  await popup.waitForSelector('.gv-tab[data-tab="odds"]');
+  assert.deepEqual(await popup.locator('.gv-tab').allInnerTexts(), ['Odds', 'Info']);
+  await popup.click('[data-action="game-tab"][data-tab="odds"]');
+  assert.match(await popup.locator('.odds-table').innerText(), /ALA\s+-2\.5[\s\S]*-140[\s\S]*UGA\s+\+2\.5[\s\S]*\+120/);
   await popup.click('[data-action="back"]');
 });
 
@@ -353,6 +395,44 @@ await step('overlay on a protected page reports a friendly error', async () => {
 });
 
 // ------------------------------------------------------------------ pop-out
+await step('odds fall back to ESPN when DraftKings is blocked', async () => {
+  dkBlocked = true;
+  const page = await context.newPage(); // fresh page: no cached DraftKings response
+  watch(page, 'fallback');
+  await page.setViewportSize({ width: 380, height: 580 });
+  await page.goto(appUrl('popup'));
+  await page.click('.tab[data-league="nfl"]');
+  await page.waitForSelector('.game.state-pre .odds-line');
+  await page.waitForTimeout(500);
+  assert.equal(await page.locator('.game.state-in .odds-line').count(), 0, 'no ESPN odds for the live game');
+  assert.match(await page.locator('.game.state-pre .odds-line').innerText(), /^DK\s*SF -2\.5 · O\/U 44\.5 · ML SF -135 SEA \+115$/);
+  await page.click('.game.state-in');
+  await page.click('[data-action="game-tab"][data-tab="odds"]');
+  await page.waitForFunction(() => /live feed is unavailable/.test(document.querySelector('.gv-body')?.innerText || ''));
+  const text = await page.locator('.gv-body').innerText();
+  assert.match(text, /DraftKings\s*Latest line/);
+  assert.match(text, /KC\s+-3\s+-110\s+O 50\.5\s+-110\s+-160/);
+  assert.match(text, /DraftKings line via ESPN\. The DraftKings live feed is unavailable right now\./);
+  assert.equal(await page.locator('.odds-link').count(), 0);
+  await page.screenshot({ path: `${SHOTS}/game-odds-espn-fallback.png` });
+  await page.close();
+  dkBlocked = false;
+});
+
+await step('odds can be turned off in settings', async () => {
+  await popup.click('.tab[data-league="nfl"]');
+  await popup.waitForSelector('.odds-line');
+  await popup.click('[data-action="settings"]');
+  await popup.uncheck('[data-setting="showOdds"]');
+  await popup.click('.settings [data-action="settings"]');
+  await popup.waitForSelector('.game');
+  assert.equal(await popup.locator('.odds-line').count(), 0);
+  await popup.click('[data-action="settings"]');
+  await popup.check('[data-setting="showOdds"]');
+  await popup.click('.settings [data-action="settings"]');
+  await popup.waitForSelector('.odds-line');
+});
+
 await step('pop-out window opens once and is reused', async () => {
   const opened = context.waitForEvent('page');
   await popup.evaluate(() => chrome.runtime.sendMessage({ type: 'open-popout' }));

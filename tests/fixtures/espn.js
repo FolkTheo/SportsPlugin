@@ -170,11 +170,7 @@ export const nflScoreboard = {
       competitor(NFL.SF, 'away', { score: '0', record: '2-1' }),
       competitor(NFL.SEA, 'home', { score: '0', record: '2-1' }),
       status('pre', { detail: '9/29 - 8:15 PM EDT' }),
-      {
-        date: '2026-09-30T00:15Z',
-        broadcasts: ['ESPN', 'ABC'],
-        odds: [{ details: 'SF -2.5', overUnder: 44.5 }],
-      },
+      { date: '2026-09-30T00:15Z', broadcasts: ['ESPN', 'ABC'] },
     ),
   ],
 };
@@ -705,3 +701,107 @@ export function fixtureFor(url) {
   if (!m) return null;
   return FIXTURES[m[1]]?.[m[2]] ?? null;
 }
+
+// ---------------------------------------------------------------- DraftKings
+// Shape of sportsbook-nash.draftkings.com/api/sportscontent/{site}/v1/leagues/{id}:
+// flat events / markets / selections lists joined by id. DraftKings prints
+// negative odds with a real minus sign (U+2212).
+
+const M = '−';
+
+function dkLeague(events) {
+  const out = { events: [], markets: [], selections: [] };
+  for (const ev of events) {
+    const { id, away, home, start, status = 'NOT_STARTED', spread, total, ml, suspended } = ev;
+    out.events.push({
+      id,
+      name: `${away} @ ${home}`,
+      startEventDate: start,
+      status,
+      participants: [
+        { id: `${id}-a`, name: away, venueRole: 'Away' },
+        { id: `${id}-h`, name: home, venueRole: 'Home' },
+      ],
+    });
+    const market = (kind, name, sels) => {
+      const mid = `${id}-${kind}`;
+      out.markets.push({ id: mid, eventId: id, name, marketType: { name }, ...(suspended ? { isSuspended: true } : {}) });
+      sels.forEach((s, i) => out.selections.push({ id: `${mid}-${i}`, marketId: mid, ...s }));
+    };
+    if (spread) {
+      market('spread', 'Spread', [
+        { label: away, outcomeType: 'Away', points: spread[0], displayOdds: { american: spread[1] } },
+        { label: home, outcomeType: 'Home', points: -spread[0], displayOdds: { american: spread[2] } },
+      ]);
+    }
+    if (total) {
+      market('total', 'Total', [
+        { label: 'Over', outcomeType: 'Over', points: total[0], displayOdds: { american: total[1] } },
+        { label: 'Under', outcomeType: 'Under', points: total[0], displayOdds: { american: total[2] } },
+      ]);
+    }
+    if (ml) {
+      market('ml', 'Moneyline', [
+        { label: away, outcomeType: 'Away', displayOdds: { american: ml[0] } },
+        { label: home, outcomeType: 'Home', displayOdds: { american: ml[1] } },
+      ]);
+    }
+    // A player prop the parser must ignore.
+    market('prop', 'Anytime Touchdown Scorer', [{ label: 'Travis Kelce', displayOdds: { american: '+150' } }]);
+  }
+  return out;
+}
+
+export const dkNfl = dkLeague([
+  { id: '32001', away: 'KC Chiefs', home: 'BUF Bills', start: '2026-09-28T20:25:00Z', status: 'STARTED', spread: [-3.5, `${M}115`, `${M}105`], total: [51.5, `${M}110`, `${M}110`], ml: [`${M}180`, '+150'] },
+  { id: '32002', away: 'SF 49ers', home: 'SEA Seahawks', start: '2026-09-30T00:15:00Z', spread: [-2.5, `${M}110`, `${M}110`], total: [44.5, `${M}105`, `${M}115`], ml: [`${M}135`, '+115'] },
+  // A game ESPN doesn't have on this page: must not match anything.
+  { id: '32003', away: 'LA Rams', home: 'ARI Cardinals', start: '2026-09-28T20:05:00Z', ml: [`${M}200`, '+170'] },
+]);
+
+export const dkNba = dkLeague([
+  { id: '42001', away: 'NY Knicks', home: 'BOS Celtics', start: '2026-09-28T17:00:00Z', status: 'STARTED', spread: [1.5, `${M}110`, `${M}110`], total: [214.5, `${M}110`, `${M}110`], ml: ['+105', `${M}125`], suspended: true },
+]);
+
+export const dkCfb = dkLeague([
+  // Listed the other way round from ESPN (neutral-site style), full names.
+  { id: '87001', away: 'Georgia Bulldogs', home: 'Alabama Crimson Tide', start: '2026-09-28T17:00:00Z', status: 'STARTED', spread: [2.5, `${M}110`, `${M}110`], total: [48.5, `${M}110`, `${M}110`], ml: ['+120', `${M}140`] },
+]);
+
+export const DK_FIXTURES = { 88808: dkNfl, 42648: dkNba, 87637: dkCfb, 84240: { events: [], markets: [], selections: [] }, 42133: { events: [], markets: [], selections: [] } };
+
+export function dkFixtureFor(url) {
+  const m = /\/leagues\/(\d+)/.exec(url);
+  return m ? DK_FIXTURES[m[1]] ?? null : null;
+}
+
+// ESPN's own odds block (DraftKings is ESPN's odds provider), with the
+// newer open/close objects, on the SF @ SEA pre-game and in the summary.
+export const espnDkOdds = {
+  provider: { id: '100', name: 'DraftKings', priority: 1 },
+  details: 'SF -2.5',
+  overUnder: 44.5,
+  spread: 2.5,
+  overOdds: -110,
+  underOdds: -110,
+  awayTeamOdds: { favorite: true, moneyLine: -135, spreadOdds: -110 },
+  homeTeamOdds: { favorite: false, moneyLine: 115, spreadOdds: -110 },
+  moneyline: { away: { open: { odds: '-120' }, close: { odds: '-135' } }, home: { open: { odds: '+100' }, close: { odds: '+115' } } },
+  pointSpread: { away: { open: { line: '-1.5', odds: '-110' }, close: { line: '-2.5', odds: '-110' } }, home: { open: { line: '+1.5', odds: '-110' }, close: { line: '+2.5', odds: '-110' } } },
+  total: { over: { open: { line: 'o43.5', odds: '-110' }, close: { line: 'o44.5', odds: '-110' } }, under: { open: { line: 'u43.5', odds: '-110' }, close: { line: 'u44.5', odds: '-110' } } },
+};
+nflScoreboard.events[2].competitions[0].odds = [espnDkOdds];
+nflSummary.pickcenter = [
+  { provider: { id: '1004', name: 'numberfire' }, details: 'KC -1' },
+  {
+    provider: { id: '100', name: 'DraftKings' },
+    details: 'KC -3',
+    spread: 3,
+    overUnder: 50.5,
+    awayTeamOdds: { moneyLine: -160, spreadOdds: -110 },
+    homeTeamOdds: { moneyLine: 135, spreadOdds: -110 },
+    moneyline: { away: { open: { odds: '-150' }, close: { odds: '-160' } }, home: { open: { odds: '+130' }, close: { odds: '+135' } } },
+    pointSpread: { away: { open: { line: '-2.5', odds: '-110' }, close: { line: '-3', odds: '-110' } }, home: { open: { line: '+2.5', odds: '-110' }, close: { line: '+3', odds: '-110' } } },
+    total: { over: { open: { line: 'o49.5', odds: '-110' }, close: { line: 'o50.5', odds: '-110' } }, under: { open: { line: 'u49.5', odds: '-110' }, close: { line: 'u50.5', odds: '-110' } } },
+  },
+];
