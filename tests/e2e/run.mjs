@@ -198,14 +198,26 @@ await step('box score team toggle', async () => {
   assert.match(await popup.locator('table.box').first().innerText(), /J\. Allen/);
 });
 
-await step('favorite a team → ★ Mine tab', async () => {
+await step('Favorites tab is always there and starts empty', async () => {
+  await popup.click('.tab[data-league="fav"]');
+  await popup.waitForSelector('.empty [data-action="add-teams"]');
+  assert.match(await popup.locator('.content').innerText(), /Follow your teams/);
+  await popup.click('.tab[data-league="nfl"]');
+  await popup.click('.game.state-in');
+  await popup.waitForSelector('.scorebug');
+});
+
+await step('favorite from a game → team card with live game and last result', async () => {
   await popup.click('.sb-team.away [data-action="favorite"]');
   await popup.waitForSelector('.sb-team.away .star.on');
-  await popup.waitForSelector('.tab[data-league="fav"]');
   await popup.click('[data-action="back"]');
   await popup.click('.tab[data-league="fav"]');
-  await popup.waitForFunction(() => document.querySelectorAll('.game').length === 1);
-  assert.match(await popup.locator('.game').innerText(), /Chiefs/);
+  await popup.waitForSelector('.fav-team .game.state-in');
+  const card = await popup.locator('.fav-team').innerText();
+  assert.match(card, /Kansas City Chiefs/);
+  assert.match(card, /NFL · 3-0 · 1st in AFC West/);
+  assert.match(card, /Chiefs[\s\S]*24[\s\S]*Bills[\s\S]*20/);
+  assert.match(card, /Last: W 31-17 vs LV/);
   // The background watcher picks up the favorite and flags the live game.
   const badge = await worker.evaluate(async () => {
     for (let i = 0; i < 40; i++) {
@@ -216,6 +228,46 @@ await step('favorite a team → ★ Mine tab', async () => {
     return '';
   });
   assert.equal(badge, 'LIVE');
+});
+
+await step('team picker: search, add across leagues, cards sorted by game', async () => {
+  await popup.click('.subbar [data-action="add-teams"]');
+  await popup.waitForSelector('.pick');
+  assert.equal(await popup.locator('.pick').count(), 8);
+  assert.equal(await popup.locator('.pick.on').innerText().then((t) => /Kansas City Chiefs/.test(t)), true);
+  await popup.fill('.picker-search', 'sea');
+  await popup.waitForFunction(() => document.querySelectorAll('.pick').length === 1);
+  await popup.click('.pick');
+  await popup.waitForSelector('.pick.on');
+  await popup.click('[data-action="picker-league"][data-league="nhl"]');
+  await popup.waitForSelector('.pick >> text=Toronto Maple Leafs');
+  await popup.click('.pick >> text=Toronto Maple Leafs');
+  await popup.waitForSelector('.pick.on');
+  await popup.screenshot({ path: `${SHOTS}/favorites-picker.png` });
+  await popup.click('[data-action="close-picker"]');
+  await popup.waitForFunction(() => document.querySelectorAll('.fav-team').length === 3 && !document.querySelector('.fav-team .skeleton'));
+  const names = await popup.locator('.fav-name').allInnerTexts();
+  assert.deepEqual(names, ['Kansas City Chiefs', 'Seattle Seahawks', 'Toronto Maple Leafs']); // live, upcoming, idle
+  const tor = await popup.locator('.fav-team').nth(2).innerText();
+  assert.match(tor, /NHL · 1-0-0 · 3rd in Atlantic Division/);
+  assert.match(tor, /No upcoming games scheduled/);
+  assert.match(tor, /Last: W 3-2 vs MTL/);
+  assert.match(await popup.locator('.fav-team').nth(1).innerText(), /Last: L 20-24 @ LAR/);
+  await popup.waitForSelector('.toast', { state: 'hidden' });
+  await popup.screenshot({ path: `${SHOTS}/favorites.png` });
+});
+
+await step('last result opens that game; star removes a team', async () => {
+  await popup.locator('.fav-team').nth(2).locator('.fav-last').click();
+  await popup.waitForSelector('.linescore');
+  assert.match(await popup.locator('.scorebug').innerText(), /MTL[\s\S]*TOR/);
+  await popup.click('[data-action="back"]');
+  await popup.waitForSelector('.fav-team');
+  for (const name of ['Toronto Maple Leafs', 'Seattle Seahawks']) {
+    await popup.locator('.fav-team', { hasText: name }).locator('[data-action="unfavorite"]').click();
+    await popup.waitForFunction((n) => ![...document.querySelectorAll('.fav-name')].some((el) => el.textContent.includes(n)), name);
+  }
+  assert.deepEqual(await popup.locator('.fav-name').allInnerTexts(), ['Kansas City Chiefs']);
 });
 
 await step('Odds tab: DraftKings live lines, implied chance, ESPN opener', async () => {

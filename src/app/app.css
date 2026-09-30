@@ -1274,3 +1274,162 @@ table.box tr.totals th {
   font-size: 10px;
   line-height: 1.4;
 }
+
+/* -------------------------------------------------------------- favorites */
+
+.fav-teams {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 8px;
+}
+
+.fav-team {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--team);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.03), transparent 60px);
+}
+
+.fav-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 2px;
+}
+
+.fav-title {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+}
+
+.fav-name {
+  font-weight: 800;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fav-meta {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fav-head .star {
+  font-size: 16px;
+}
+
+.fav-none {
+  padding: 10px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.fav-last {
+  border: 0;
+  background: none;
+  padding: 0 2px;
+  text-align: left;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.fav-last:hover .muted {
+  color: var(--text);
+}
+
+.res {
+  font-weight: 800;
+}
+
+.res-W {
+  color: var(--good);
+}
+
+.res-L {
+  color: var(--live);
+}
+
+.res-T {
+  color: var(--warn);
+}
+
+.picker-leagues {
+  margin-bottom: 8px;
+}
+
+.picker-search {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+
+.picker-search:focus {
+  border-color: var(--accent);
+}
+
+.team-picker {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.pick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 6px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pick:hover,
+.pick:focus-visible {
+  background: var(--panel);
+}
+
+.pick-name {
+  flex: 1;
+  font-weight: 600;
+}
+
+.pick-abbr {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.pick-star {
+  color: var(--line);
+  font-size: 16px;
+}
+
+.pick.on .pick-star {
+  color: var(--warn);
+}
+
+.settings > .btn {
+  margin-top: 6px;
+}
+
+body.mode-popup .tab {
+  padding: 6px 8px;
+}

@@ -20,6 +20,19 @@ export function summaryUrl(leagueId, eventId) {
   return `${API_ROOT}/${LEAGUES[leagueId].path}/summary?event=${encodeURIComponent(eventId)}`;
 }
 
+export function teamsUrl(leagueId) {
+  const params = new URLSearchParams({ limit: '1000', ...(LEAGUES[leagueId].teamsParams || {}) });
+  return `${API_ROOT}/${LEAGUES[leagueId].path}/teams?${params}`;
+}
+
+export function teamUrl(leagueId, teamId) {
+  return `${API_ROOT}/${LEAGUES[leagueId].path}/teams/${encodeURIComponent(teamId)}`;
+}
+
+export function teamScheduleUrl(leagueId, teamId) {
+  return `${API_ROOT}/${LEAGUES[leagueId].path}/teams/${encodeURIComponent(teamId)}/schedule`;
+}
+
 // ---------------------------------------------------------------------------
 // Small helpers
 
@@ -510,5 +523,78 @@ export function normalizeSummary(json, leagueId) {
     note: arr(comp.notes)[0]?.headline || '',
     series: comp.series?.summary || '',
     odds: oddsFromEspn(arr(json?.pickcenter).length ? json.pickcenter : json?.odds),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Teams (favorites)
+
+function teamInfo(t = {}, leagueId) {
+  return {
+    id: str(t.id),
+    league: leagueId,
+    abbr: t.abbreviation || t.shortDisplayName || '',
+    name: t.shortDisplayName || t.name || t.displayName || '',
+    fullName: t.displayName || t.name || '',
+    nickname: t.name || '',
+    location: t.location || '',
+    logo: logoOf(t),
+    color: t.color ? `#${t.color}` : '',
+  };
+}
+
+// Every team in a league, for the favorites picker.
+export function normalizeTeamList(json, leagueId) {
+  const leagues = arr(json?.sports).flatMap((s) => arr(s.leagues));
+  return leagues
+    .flatMap((l) => arr(l.teams))
+    .map((entry) => teamInfo(entry.team || entry, leagueId))
+    .filter((t) => t.id && t.fullName && t.fullName !== 'TBD')
+    .sort((a, b) => a.fullName.localeCompare(b.fullName));
+}
+
+// A team's record, standing, current/next game and last result, from the
+// team endpoint (live `nextEvent`) plus its schedule (past results).
+export function normalizeTeamOverview(teamJson, scheduleJson, leagueId) {
+  const t = teamJson?.team || {};
+  const info = teamInfo(t, leagueId);
+  const records = arr(t.record?.items);
+  const record = records.find((r) => r.type === 'total') || records[0];
+  const rank = t.rank && t.rank <= 25 ? t.rank : null;
+
+  const nextEvent = arr(t.nextEvent)[0];
+  const next = nextEvent ? normalizeEvent(nextEvent, leagueId) : null;
+
+  let last = null;
+  const completed = arr(scheduleJson?.events)
+    .map((e) => normalizeEvent(e, leagueId))
+    .filter((g) => g.status.completed && g.id !== next?.id)
+    .sort((a, b) => new Date(a.date) - new Date(b.date));
+  const lastGame = completed[completed.length - 1];
+  if (lastGame) {
+    const side = lastGame.home.id === info.id ? 'home' : 'away';
+    const us = lastGame[side];
+    const them = lastGame[side === 'home' ? 'away' : 'home'];
+    const a = Number(us.score);
+    const b = Number(them.score);
+    last = {
+      gameId: lastGame.id,
+      date: lastGame.date,
+      result: us.winner ? 'W' : them.winner ? 'L' : Number.isFinite(a) && Number.isFinite(b) && a !== b ? (a > b ? 'W' : 'L') : 'T',
+      score: `${us.score}-${them.score}`,
+      opponent: them.abbr,
+      home: side === 'home',
+      detail: lastGame.status.detail,
+    };
+  }
+
+  return {
+    ...info,
+    key: `${leagueId}:${info.id}`,
+    rank,
+    record: str(record?.summary),
+    standing: t.standingSummary || '',
+    next,
+    last,
   };
 }

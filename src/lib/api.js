@@ -1,7 +1,17 @@
 // Network layer. Extension pages and the service worker both use this; the
 // manifest's host permissions (ESPN, DraftKings) let them fetch cross-origin.
 
-import { normalizeScoreboard, normalizeSummary, scoreboardUrl, summaryUrl } from './espn.js';
+import {
+  normalizeScoreboard,
+  normalizeSummary,
+  normalizeTeamList,
+  normalizeTeamOverview,
+  scoreboardUrl,
+  summaryUrl,
+  teamScheduleUrl,
+  teamsUrl,
+  teamUrl,
+} from './espn.js';
 import { draftKingsUrl, normalizeDraftKings } from './odds.js';
 
 const TIMEOUT_MS = 10000;
@@ -29,6 +39,41 @@ export async function fetchScoreboard(leagueId, query = {}) {
 
 export async function fetchSummary(leagueId, eventId) {
   return normalizeSummary(await getJson(summaryUrl(leagueId, eventId)), leagueId);
+}
+
+// Past results change rarely; keep each team's schedule for 10 minutes.
+const SCHEDULE_TTL_MS = 10 * 60000;
+const scheduleCache = new Map();
+
+function fetchSchedule(leagueId, teamId) {
+  const key = `${leagueId}:${teamId}`;
+  const hit = scheduleCache.get(key);
+  if (hit && Date.now() - hit.at < SCHEDULE_TTL_MS) return hit.promise;
+  const promise = getJson(teamScheduleUrl(leagueId, teamId)).catch((err) => {
+    scheduleCache.delete(key);
+    console.warn('Courtside: schedule unavailable', key, err);
+    return null; // the card still works without a last result
+  });
+  scheduleCache.set(key, { at: Date.now(), promise });
+  return promise;
+}
+
+export async function fetchTeamOverview(leagueId, teamId) {
+  const [team, schedule] = await Promise.all([getJson(teamUrl(leagueId, teamId)), fetchSchedule(leagueId, teamId)]);
+  return normalizeTeamOverview(team, schedule, leagueId);
+}
+
+// Team lists barely change, so the picker keeps them for a week.
+const TEAMS_TTL_MS = 7 * 24 * 3600 * 1000;
+
+export async function fetchTeams(leagueId) {
+  const storageKey = `teams:${leagueId}`;
+  const local = globalThis.chrome?.storage?.local;
+  const cached = local ? (await local.get(storageKey))[storageKey] : null;
+  if (cached && Date.now() - cached.at < TEAMS_TTL_MS && cached.teams?.length) return cached.teams;
+  const teams = normalizeTeamList(await getJson(teamsUrl(leagueId)), leagueId);
+  if (local && teams.length) await local.set({ [storageKey]: { at: Date.now(), teams } });
+  return teams;
 }
 
 // DraftKings lines for a whole league. Cached briefly so several views (and

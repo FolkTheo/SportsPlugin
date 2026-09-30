@@ -697,9 +697,16 @@ export const FIXTURES = {
 
 // Resolve an ESPN API URL to a fixture body (or null).
 export function fixtureFor(url) {
-  const m = /\/sports\/([^/]+\/[^/]+)\/(scoreboard|summary)/.exec(url);
-  if (!m) return null;
-  return FIXTURES[m[1]]?.[m[2]] ?? null;
+  const path = new URL(url).pathname;
+  let m = /\/sports\/([^/]+\/[^/]+)\/(scoreboard|summary)$/.exec(path);
+  if (m) return FIXTURES[m[1]]?.[m[2]] ?? null;
+  m = /\/sports\/([^/]+\/[^/]+)\/teams\/(\d+)\/schedule$/.exec(path);
+  if (m) return TEAM_SCHEDULES[m[1]]?.[m[2]] ?? { events: [] };
+  m = /\/sports\/([^/]+\/[^/]+)\/teams\/(\d+)$/.exec(path);
+  if (m) return TEAM_DOCS[m[1]]?.[m[2]] ?? null;
+  m = /\/sports\/([^/]+\/[^/]+)\/teams$/.exec(path);
+  if (m) return TEAM_LISTS[m[1]] ?? null;
+  return null;
 }
 
 // ---------------------------------------------------------------- DraftKings
@@ -805,3 +812,65 @@ nflSummary.pickcenter = [
     total: { over: { open: { line: 'o49.5', odds: '-110' }, close: { line: 'o50.5', odds: '-110' } }, under: { open: { line: 'u49.5', odds: '-110' }, close: { line: 'u50.5', odds: '-110' } } },
   },
 ];
+
+// ---------------------------------------------------------------- teams
+// /teams (list), /teams/{id} (record, standing, live nextEvent) and
+// /teams/{id}/schedule (results). The team endpoints give scores as objects.
+
+const scoreObjects = (ev) => {
+  const copy = structuredClone(ev);
+  for (const c of copy.competitions[0].competitors) c.score = { value: Number(c.score), displayValue: String(c.score) };
+  return copy;
+};
+
+const teamDoc = (t, league, extra) => ({
+  team: { ...t, logo: undefined, logos: [{ href: logo(league, t.abbreviation) }], ...extra },
+});
+
+const finalEvent = (id, date, away, home) =>
+  scoreObjects(event(id, competitor(away[0], 'away', { score: away[1], winner: +away[1] > +home[1] }), competitor(home[0], 'home', { score: home[1], winner: +home[1] > +away[1] }), status('post', { detail: 'Final', period: 4 }), { date }));
+
+const LV = team('nfl', 13, 'LV', 'Las Vegas', 'Raiders', '000000');
+const LAR = team('nfl', 14, 'LAR', 'Los Angeles', 'Rams', '003594');
+
+export const TEAM_DOCS = {
+  'football/nfl': {
+    12: teamDoc(NFL.KC, 'nfl', {
+      record: { items: [{ description: 'Overall Record', type: 'total', summary: '3-0' }] },
+      standingSummary: '1st in AFC West',
+      nextEvent: [scoreObjects(nflScoreboard.events[0])],
+    }),
+    26: teamDoc(NFL.SEA, 'nfl', {
+      record: { items: [{ type: 'total', summary: '2-1' }] },
+      standingSummary: '2nd in NFC West',
+      nextEvent: [scoreObjects(nflScoreboard.events[2])],
+    }),
+  },
+  'hockey/nhl': {
+    21: teamDoc(NHL.TOR, 'nhl', { record: { items: [{ type: 'total', summary: '1-0-0' }] }, standingSummary: '3rd in Atlantic Division', nextEvent: [] }),
+  },
+};
+
+export const TEAM_SCHEDULES = {
+  'football/nfl': {
+    12: {
+      events: [
+        finalEvent('401771901', '2026-09-14T17:00Z', [NFL.KC, '27'], [NFL.DAL, '20']),
+        finalEvent('401771902', '2026-09-21T20:25Z', [LV, '17'], [NFL.KC, '31']),
+        scoreObjects(nflScoreboard.events[0]),
+      ],
+    },
+    26: { events: [finalEvent('401771903', '2026-09-21T20:05Z', [NFL.SEA, '20'], [LAR, '24'])] },
+  },
+  'hockey/nhl': { 21: { events: [scoreObjects(nhlScoreboard.events[0])] } },
+};
+
+const teamListDoc = (teams) => ({ sports: [{ leagues: [{ teams: teams.map((t) => ({ team: { ...t, logo: undefined, logos: [{ href: t.logo }] } })) }] }] });
+
+export const TEAM_LISTS = {
+  'football/nfl': teamListDoc([...Object.values(NFL), LV, LAR]),
+  'basketball/nba': teamListDoc(Object.values(NBA)),
+  'baseball/mlb': teamListDoc(Object.values(MLB)),
+  'hockey/nhl': teamListDoc(Object.values(NHL)),
+  'football/college-football': teamListDoc(Object.values(CFB)),
+};

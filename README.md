@@ -39,8 +39,11 @@ Your place (league, open game, tab) carries over between all three views.
 - **Leaders**, with headshots.
 - **Info**: venue, TV, attendance, line and series.
 
-**My teams**
-- Tap ★ next to a team in any game to follow it. A **★ Mine** tab then collects today's games for all your teams across leagues.
+**Favorites** (the ★ tab)
+- One card per team, from any mix of leagues. Each card shows the team's record and standing (for example "3-0 · 1st in AFC West"), then its current or next game with the live score, situation and odds, then its last result ("Last: W 31-17 vs LV"). Click the result to open that game's box score.
+- Cards are ordered with teams playing now first, then by who plays next.
+- **+ Add teams** opens a searchable list of every team in each league. You can also tap ★ next to a team inside any game, or remove a team with the ★ on its card.
+- Favorites sync across your Chrome browsers, and their games are pinned to the top of each league's scoreboard.
 - The toolbar badge shows **LIVE** while one of your teams is playing.
 - Optional desktop alerts when your team's game starts, when either team scores, and at the final whistle. Clicking an alert opens that game.
 
@@ -117,14 +120,16 @@ npm test            # unit tests for the ESPN and odds parsers (Node 20+)
 npm run test:e2e    # loads the extension in Chromium with Playwright, using fixture data
 ```
 
-The end-to-end run fills in for ESPN and DraftKings with the fixtures in `tests/fixtures/espn.js`. It then exercises every league, odds (including the ESPN fallback when DraftKings is blocked), game detail tabs, favorites and the badge, settings, error recovery, the overlay (drag, resize, transparency, minimize, fullscreen, toggle) and the pop-out window. Screenshots are saved to `tests/e2e/screenshots/`.
+The end-to-end run fills in for ESPN and DraftKings with the fixtures in `tests/fixtures/espn.js`. It then exercises every league, odds (including the ESPN fallback when DraftKings is blocked), game detail tabs, favorites (team cards, the picker, removal) and the badge, settings, error recovery, the overlay (drag, resize, transparency, minimize, fullscreen, toggle) and the pop-out window. Screenshots are saved to `tests/e2e/screenshots/`.
 
 ## Screenshots
 
 | Scoreboard | Game detail | Baseball |
 |---|---|---|
 | ![](docs/screenshots/popup-nfl.png) | ![](docs/screenshots/game-nfl-box.png) | ![](docs/screenshots/game-mlb.png) |
-| **College football** | **Team stats** | **DraftKings odds** |
-| ![](docs/screenshots/popup-cfb.png) | ![](docs/screenshots/game-nfl-team.png) | ![](docs/screenshots/game-nfl-odds.png) |
+| **Favorites** | **Team picker** | **DraftKings odds** |
+| ![](docs/screenshots/favorites.png) | ![](docs/screenshots/favorites-picker.png) | ![](docs/screenshots/game-nfl-odds.png) |
+| **College football** | **Team stats** | |
+| ![](docs/screenshots/popup-cfb.png) | ![](docs/screenshots/game-nfl-team.png) | |
 
 The team logos in these screenshots are placeholders from the test fixtures. The real extension shows each team's actual logo from ESPN.

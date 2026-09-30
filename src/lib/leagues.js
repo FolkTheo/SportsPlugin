@@ -43,6 +43,7 @@ export const LEAGUES = {
     weekly: true,
     // groups=80 is every FBS game; without it ESPN only returns featured games.
     scoreboardParams: { groups: '80', limit: '400' },
+    teamsParams: { groups: '80' },
   },
 };
 

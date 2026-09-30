@@ -4,7 +4,7 @@
 //   window  – the pop-out window, which can also float on top via Document PiP
 
 import { LEAGUES, LEAGUE_ORDER } from '../lib/leagues.js';
-import { fetchDraftKingsOdds, fetchScoreboard, fetchSummary } from '../lib/api.js';
+import { fetchDraftKingsOdds, fetchScoreboard, fetchSummary, fetchTeamOverview, fetchTeams } from '../lib/api.js';
 import { sortGames } from '../lib/espn.js';
 import { matchDraftKings, mergeOdds, noVigProbabilities } from '../lib/odds.js';
 import * as store from '../lib/storage.js';
@@ -30,6 +30,7 @@ const state = {
   updatedAt: null,
   changed: new Set(), // "gameId:side" keys whose score just changed
   showSettings: false,
+  picker: null, // { league, query, teams, error } while choosing favorite teams
   pip: null,
 };
 
@@ -160,17 +161,17 @@ function scoreboardKey() {
   return `${league}|${JSON.stringify(scoreboardQuery(league))}`;
 }
 
-async function loadFavoriteGames() {
-  const leagues = [...new Set(state.favorites.map((f) => f.league))].filter((l) => LEAGUES[l]);
-  const results = await Promise.allSettled(leagues.map((l) => fetchScoreboard(l)));
-  const keys = favKeys();
-  const games = results
-    .flatMap((r) => (r.status === 'fulfilled' ? r.value.games : []))
-    .filter((g) => keys.has(`${g.league}:${g.home.id}`) || keys.has(`${g.league}:${g.away.id}`));
-  if (!games.length && results.length && results.every((r) => r.status === 'rejected')) {
-    throw results[0].reason;
-  }
-  return { games, week: null };
+// One overview per favorite team: record, standing, current/next game and
+// last result. The next games double as the view's game list, so live
+// refresh, score flashes and odds work just like a league scoreboard.
+async function loadFavoriteTeams() {
+  const favorites = state.favorites.filter((f) => LEAGUES[f.league]);
+  const results = await Promise.allSettled(favorites.map((f) => fetchTeamOverview(f.league, f.teamId)));
+  if (results.length && results.every((r) => r.status === 'rejected')) throw results[0].reason;
+  const teams = results.map((r, i) =>
+    r.status === 'fulfilled' ? r.value : { ...favorites[i], id: favorites[i].teamId, fullName: favorites[i].name, error: true },
+  );
+  return { games: teams.map((t) => t.next).filter(Boolean), teams, week: null };
 }
 
 function recordChanges(prevGames, nextGames) {
@@ -211,7 +212,7 @@ async function load({ quiet = false } = {}) {
       state.summary = summary;
     } else {
       const key = scoreboardKey();
-      const data = state.ui.league === 'fav' ? await loadFavoriteGames() : await fetchScoreboard(state.ui.league, scoreboardQuery(state.ui.league));
+      const data = state.ui.league === 'fav' ? await loadFavoriteTeams() : await fetchScoreboard(state.ui.league, scoreboardQuery(state.ui.league));
       if (seq !== loadSeq) return;
       recordChanges(state.scoreboard?.key === key ? state.scoreboard.games : [], data.games);
       state.scoreboard = { key, ...data };
@@ -268,7 +269,9 @@ function render() {
   const scrollTop = content.scrollTop;
   const sameView = content.dataset.view === viewKey();
   if (state.showSettings) content.innerHTML = renderSettings();
+  else if (state.picker) content.innerHTML = renderPicker();
   else if (state.ui.view === 'game') content.innerHTML = renderGame();
+  else if (state.ui.league === 'fav') content.innerHTML = renderFavorites();
   else content.innerHTML = renderScores();
   content.dataset.view = viewKey();
   if (sameView) content.scrollTop = scrollTop;
@@ -277,19 +280,19 @@ function render() {
 
 function viewKey() {
   if (state.showSettings) return 'settings';
+  if (state.picker) return `picker:${state.picker.league}`;
   if (state.ui.view === 'game') return `game:${state.ui.gameId}:${state.ui.gameTab}:${state.boxSide}`;
   return `scores:${scoreboardKey()}`;
 }
 
 function renderTabs() {
-  const tabs = [...LEAGUE_ORDER];
-  if (state.favorites.length) tabs.unshift('fav');
+  const tabs = ['fav', ...LEAGUE_ORDER];
   const active = state.ui.view === 'game' ? state.ui.gameLeague : state.ui.league;
   $('.league-tabs').innerHTML = tabs
     .map((id) => {
-      const label = id === 'fav' ? '★<span class="tab-text"> Mine</span>' : esc(LEAGUES[id].label);
+      const label = id === 'fav' ? '★<span class="tab-text"> Favorites</span>' : esc(LEAGUES[id].label);
       const title = id === 'fav' ? 'Your favorite teams' : LEAGUES[id].name;
-      const selected = !state.showSettings && (state.ui.view === 'game' ? id === active : id === state.ui.league);
+      const selected = !state.showSettings && (state.picker ? id === 'fav' : state.ui.view === 'game' ? id === active : id === state.ui.league);
       return `<button role="tab" class="tab${selected ? ' active' : ''}" aria-selected="${selected}" data-action="league" data-league="${id}" title="${esc(title)}">${label}</button>`;
     })
     .join('');
@@ -315,7 +318,6 @@ function renderStatusBar() {
 
 function renderSubbar() {
   const league = state.ui.league;
-  if (league === 'fav') return `<div class="subbar"><span class="sub-label">Today's games for your teams</span></div>`;
   const def = LEAGUES[league];
   let nav;
   if (def.weekly) {
@@ -356,9 +358,7 @@ function renderScores() {
     const games = visibleGames();
     if (!games.length) {
       const msg =
-        state.ui.league === 'fav'
-          ? 'None of your teams play today.'
-          : state.settings.hideFinal && state.scoreboard?.games.length
+        state.settings.hideFinal && state.scoreboard?.games.length
             ? 'All games are final. (Finished games are hidden in settings.)'
             : 'No games scheduled.';
       body = `<div class="empty">${esc(msg)}</div>`;
@@ -493,6 +493,126 @@ function oddsLine(game) {
   return `<div class="odds-line" title="${esc(`${o.provider} odds${o.source === 'espn' ? ' via ESPN' : ''}`)}"><span class="book">${esc(bookLabel(o))}</span>${parts.join(
     ' · ',
   )}${live ? ' <span class="live-tag">LIVE</span>' : ''}${o.suspended ? ' <span class="muted">suspended</span>' : ''}</div>`;
+}
+
+// ---------------------------------------------------------------------------
+// Rendering: favorites
+
+const NEXT_ORDER = { in: 0, pre: 1, post: 2 };
+
+function favoriteTeams() {
+  // Filter by the live favorites list so removals show instantly; teams added
+  // since the last load show as placeholders until the next refresh.
+  const loaded = new Map((state.scoreboard?.key === 'fav' ? state.scoreboard.teams || [] : []).map((t) => [t.key || `${t.league}:${t.id}`, t]));
+  return state.favorites
+    .filter((f) => LEAGUES[f.league])
+    .map((f) => loaded.get(f.key) || { ...f, id: f.teamId, fullName: f.name, pending: true })
+    .sort(
+      (a, b) =>
+        (a.next ? NEXT_ORDER[a.next.status.state] : 3) - (b.next ? NEXT_ORDER[b.next.status.state] : 3) ||
+        (a.next && b.next ? new Date(a.next.date) - new Date(b.next.date) : 0) ||
+        a.fullName.localeCompare(b.fullName),
+    );
+}
+
+function renderFavorites() {
+  const head = `<div class="subbar"><span class="sub-label">Your teams</span><span class="spacer"></span><button class="chip" data-action="add-teams">+ Add teams</button></div>`;
+  if (!state.favorites.length) {
+    return (
+      head +
+      `<div class="empty">Follow your teams to see their live scores, next games and latest results here.<br />
+        <button class="btn" data-action="add-teams">Choose teams</button></div>`
+    );
+  }
+  if (state.scoreboard?.key !== 'fav' && state.error && !state.loading) {
+    return head + `<div class="empty">Couldn't load your teams.<br /><button class="btn" data-action="refresh">Try again</button></div>`;
+  }
+  const teams = favoriteTeams();
+  const live = teams.filter((t) => t.next?.status.state === 'in').length;
+  return (
+    head +
+    (live ? `<div class="section-label"><span class="live-dot"></span> ${live} playing now</div>` : '') +
+    `<div class="fav-teams">${teams.map(favoriteTeamCard).join('')}</div>`
+  );
+}
+
+function favoriteTeamCard(t) {
+  const meta = [LEAGUES[t.league]?.label, t.record, t.standing].filter(Boolean).join(' · ');
+  let body;
+  if (t.pending) body = '<div class="game skeleton"></div>';
+  else if (t.error) body = `<div class="fav-none">Couldn't load this team right now.</div>`;
+  else if (t.next) body = gameCard(t.next);
+  else body = '<div class="fav-none">No upcoming games scheduled.</div>';
+  const last = t.last
+    ? `<button class="fav-last" data-action="open-game" data-id="${esc(t.last.gameId)}" data-league="${esc(t.league)}">
+        Last: <b class="res res-${esc(t.last.result)}">${esc(t.last.result)}</b> ${esc(t.last.score)} ${t.last.home ? 'vs' : '@'} ${esc(t.last.opponent)}
+        <span class="muted">· ${esc(new Date(t.last.date).toLocaleDateString([], { month: 'short', day: 'numeric' }))}${
+          t.last.detail && t.last.detail !== 'Final' ? ` · ${esc(t.last.detail)}` : ''
+        }</span>
+      </button>`
+    : '';
+  return `
+    <section class="fav-team" style="--team:${esc(t.color || 'var(--line)')}">
+      <div class="fav-head">
+        ${logo({ logo: t.logo, abbr: t.abbr || '' }, 30)}
+        <div class="fav-title">
+          <span class="fav-name">${t.rank ? `<span class="rank">${t.rank}</span> ` : ''}${esc(t.fullName)}</span>
+          ${meta ? `<span class="fav-meta">${esc(meta)}</span>` : ''}
+        </div>
+        <button class="star on" data-action="unfavorite" data-key="${esc(t.key || `${t.league}:${t.id}`)}" title="Remove from favorites" aria-label="Remove ${esc(t.fullName)} from favorites">★</button>
+      </div>
+      ${body}
+      ${last}
+    </section>`;
+}
+
+function renderPicker() {
+  const p = state.picker;
+  return `
+    <div class="gv-nav"><button class="back" data-action="close-picker">‹ Done</button><span class="gv-league">Add favorite teams</span></div>
+    <div class="seg picker-leagues" role="tablist">${LEAGUE_ORDER.map(
+      (id) => `<button class="${id === p.league ? 'active' : ''}" data-action="picker-league" data-league="${id}">${esc(LEAGUES[id].label)}</button>`,
+    ).join('')}</div>
+    <input class="picker-search" type="search" data-picker-search placeholder="Search ${esc(LEAGUES[p.league].label)} teams" value="${esc(p.query)}" autocomplete="off" />
+    <ul class="team-picker">${pickerList()}</ul>`;
+}
+
+function pickerList() {
+  const p = state.picker;
+  if (p.error) return `<li class="empty small">Couldn't load teams.<br /><button class="btn" data-action="picker-league" data-league="${esc(p.league)}">Try again</button></li>`;
+  if (!p.teams) return '<li class="empty small"><span class="spinner"></span></li>';
+  const q = p.query.trim().toLowerCase();
+  const teams = q ? p.teams.filter((t) => [t.fullName, t.abbr, t.location].some((v) => v.toLowerCase().includes(q))) : p.teams;
+  if (!teams.length) return '<li class="empty small">No teams match.</li>';
+  return teams
+    .map((t) => {
+      const on = isFavTeam(p.league, t);
+      return `<li><button class="pick${on ? ' on' : ''}" data-action="pick-team" data-id="${esc(t.id)}" aria-pressed="${on}" title="${on ? 'Remove from' : 'Add to'} favorites">
+        ${logo(t, 24)}<span class="pick-name">${esc(t.fullName)}</span><span class="pick-abbr">${esc(t.abbr)}</span><span class="pick-star">★</span></button></li>`;
+    })
+    .join('');
+}
+
+async function loadPickerTeams() {
+  const league = state.picker.league;
+  try {
+    const teams = await fetchTeams(league);
+    if (state.picker?.league !== league) return;
+    state.picker.teams = teams;
+  } catch (err) {
+    if (state.picker?.league !== league) return;
+    state.picker.error = err.message || 'Could not load teams';
+  }
+  const list = $('.team-picker');
+  if (list) list.innerHTML = pickerList();
+}
+
+function openPicker(league) {
+  state.showSettings = false;
+  state.picker = { league: LEAGUES[league] ? league : 'nfl', query: '', teams: null, error: null };
+  render();
+  $('.picker-search')?.focus();
+  loadPickerTeams();
 }
 
 // ---------------------------------------------------------------------------
@@ -836,7 +956,7 @@ function renderSettings() {
           )}</span><button class="link" data-action="unfavorite" data-key="${esc(f.key)}">Remove</button></li>`,
         )
         .join('')}</ul>`
-    : '<p class="muted">Open any game and tap ★ next to a team to follow it.</p>';
+    : '<p class="muted">No teams yet. You can also tap ★ next to a team in any game.</p>';
   return `
     <div class="settings">
       <div class="gv-nav"><button class="back" data-action="settings">‹ Done</button><span class="gv-league">Settings</span></div>
@@ -853,6 +973,7 @@ function renderSettings() {
       ${check('notifyFavorites', 'Notify me when my teams score', 'Also shows live favorite games on the toolbar icon')}
       <h3>My teams</h3>
       ${favs}
+      <button class="btn" data-action="add-teams">+ Add teams</button>
       <h3>Shortcuts</h3>
       <p class="muted">Alt+Shift+S toggles the overlay on the current page. Alt+Shift+P opens the pop-out window.
       <button class="link" data-action="shortcuts">Change shortcuts</button></p>
@@ -875,6 +996,7 @@ const actions = {
   async league(el) {
     const league = el.dataset.league;
     state.showSettings = false;
+    state.picker = null;
     if (league !== state.ui.league) {
       state.dayOffset = 0;
       state.weekQuery = null;
@@ -931,10 +1053,33 @@ const actions = {
     const f = state.favorites.find((x) => x.key === el.dataset.key);
     if (!f) return;
     state.favorites = await store.toggleFavorite(f.league, { id: f.teamId });
-    if (!state.favorites.length && state.ui.league === 'fav') await setUi({ league: 'nfl' });
+    toast(`Unfollowed ${f.name}`);
     render();
   },
+  'add-teams'() {
+    // Start the picker on the league being browsed, if any.
+    openPicker(state.ui.view === 'game' ? state.ui.gameLeague : state.ui.league);
+  },
+  'picker-league'(el) {
+    Object.assign(state.picker, { league: el.dataset.league, query: '', teams: null, error: null });
+    render();
+    loadPickerTeams();
+  },
+  async 'pick-team'(el) {
+    const p = state.picker;
+    const team = p.teams?.find((t) => t.id === el.dataset.id);
+    if (!team) return;
+    state.favorites = await store.toggleFavorite(p.league, team);
+    toast(isFavTeam(p.league, team) ? `Following ${team.fullName}` : `Unfollowed ${team.fullName}`);
+    $('.team-picker').innerHTML = pickerList();
+  },
+  async 'close-picker'() {
+    state.picker = null;
+    await setUi({ league: 'fav', view: 'scores' });
+    load();
+  },
   settings() {
+    state.picker = null;
     state.showSettings = !state.showSettings;
     render();
     if (!state.showSettings) load({ quiet: true });
@@ -968,6 +1113,12 @@ root.addEventListener('click', (e) => {
     e.preventDefault();
     Promise.resolve(fn(el)).catch((err) => toast(err.message || String(err)));
   }
+});
+
+root.addEventListener('input', (e) => {
+  if (!state.picker || !e.target.matches?.('[data-picker-search]')) return;
+  state.picker.query = e.target.value;
+  $('.team-picker').innerHTML = pickerList();
 });
 
 root.addEventListener('change', async (e) => {
@@ -1031,7 +1182,7 @@ async function init() {
   state.ui = ui;
   state.settings = settings;
   state.favorites = favorites;
-  if (!LEAGUES[state.ui.league] && !(state.ui.league === 'fav' && favorites.length)) state.ui.league = 'nfl';
+  if (!LEAGUES[state.ui.league] && state.ui.league !== 'fav') state.ui.league = 'nfl';
   if (state.ui.view === 'game' && !(state.ui.gameId && LEAGUES[state.ui.gameLeague])) state.ui.view = 'scores';
   render();
   load();
@@ -1047,6 +1198,8 @@ async function init() {
     if (area === 'sync' && changes.favorites) {
       state.favorites = changes.favorites.newValue || [];
       render();
+      // Fetch newly added teams when the favorites list is on screen.
+      if (state.ui.league === 'fav' && state.ui.view === 'scores' && !state.picker && !state.showSettings) load({ quiet: true });
     }
   });
 
@@ -1059,6 +1212,7 @@ async function init() {
     if (e.target.closest?.('input, select, textarea')) return;
     if (e.key === 'Escape' || e.key === 'Backspace') {
       if (state.showSettings) actions.settings();
+      else if (state.picker) actions['close-picker']();
       else if (state.ui.view === 'game') actions.back();
     } else if (e.key === 'r') {
       load();
