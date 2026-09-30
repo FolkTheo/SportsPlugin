@@ -152,6 +152,7 @@ await step('CFB Top 25 filter hides unranked matchups', async () => {
 
 await step('CFB conference filter asks ESPN for that conference', async () => {
   await popup.waitForSelector('[data-conference="cfb"] option[value="8"]', { state: 'attached' });
+  assert.deepEqual(await popup.locator('[data-conference="cfb"] option').allInnerTexts(), ['All conferences', 'American', 'Big 12', 'Big Ten', 'SEC', 'Sun Belt']);
   await popup.selectOption('[data-conference="cfb"]', '8');
   await popup.waitForFunction(() => document.querySelectorAll('.game').length === 1);
   assert.ok(requests.some((u) => /college-football\/scoreboard\?groups=8&limit=400/.test(u)), 'groups=8 sent');

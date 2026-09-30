@@ -3,6 +3,7 @@
 // sport and by game state, and fields come and go without notice.
 
 import { LEAGUES, periodLabel } from './leagues.js';
+import { conferenceLabel } from './conferences.js';
 import { oddsFromEspn } from './odds.js';
 
 const API_ROOT = 'https://site.api.espn.com/apis/site/v2/sports';
@@ -612,16 +613,11 @@ export function normalizeTeamOverview(teamJson, scheduleJson, leagueId) {
 
 export function normalizeConferences(json) {
   return arr(json?.children)
-    .map((c) => {
-      const name = str(c.name);
-      const abbr = str(c.abbreviation || c.shortName);
-      return {
-        id: str(c.id),
-        name,
-        // "SEC", "Big Ten": short enough for a dropdown; otherwise the full name.
-        label: abbr && abbr.length <= 16 ? abbr : name.replace(/\s+Conference$/i, ''),
-      };
-    })
+    .map((c) => ({
+      id: str(c.id),
+      name: str(c.name),
+      label: conferenceLabel({ name: c.name, abbreviation: c.abbreviation || c.shortName }),
+    }))
     .filter((c) => c.id && c.name)
     .sort((a, b) => a.label.localeCompare(b.label));
 }

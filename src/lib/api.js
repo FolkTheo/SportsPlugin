@@ -15,7 +15,8 @@ import {
   teamUrl,
 } from './espn.js';
 import { draftKingsUrl, normalizeDraftKings } from './odds.js';
-import { CONFERENCE_FALLBACK, LEAGUES } from './leagues.js';
+import { CONFERENCE_FALLBACK } from './conferences.js';
+import { LEAGUES } from './leagues.js';
 
 const TIMEOUT_MS = 10000;
 
@@ -112,14 +113,18 @@ const CONFERENCES_TTL_MS = 7 * 24 * 3600 * 1000;
 
 export async function fetchConferences(leagueId) {
   if (!LEAGUES[leagueId]?.college) return [];
-  const storageKey = `conferences:${leagueId}`;
+  // v2: labels are display names ("SEC"), not ESPN's slugs ("sec").
+  const storageKey = `conferences-v2:${leagueId}`;
   const local = globalThis.chrome?.storage?.local;
   const cached = local ? (await local.get(storageKey))[storageKey] : null;
   if (cached && Date.now() - cached.at < CONFERENCES_TTL_MS && cached.list?.length) return cached.list;
   try {
     const list = normalizeConferences(await getJson(standingsUrl(leagueId)));
     if (!list.length) throw new Error('no conferences in standings');
-    if (local) await local.set({ [storageKey]: { at: Date.now(), list } });
+    if (local) {
+      await local.set({ [storageKey]: { at: Date.now(), list } });
+      await local.remove(`conferences:${leagueId}`); // pre-v2 cache
+    }
     return list;
   } catch (err) {
     console.warn('Courtside: using built-in conference list', err);

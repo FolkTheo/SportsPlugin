@@ -980,20 +980,24 @@ DK_FIXTURES[92483] = dkLeague([
 ]);
 
 // Standings: top-level children are the conferences (ids = `groups`).
+// ESPN's abbreviations are lowercase internal slugs, not display names.
 export const STANDINGS = {
   'football/college-football': {
     children: [
-      { id: '8', name: 'Southeastern Conference', abbreviation: 'SEC' },
-      { id: '5', name: 'Big Ten Conference', abbreviation: 'Big Ten' },
-      { id: '4', name: 'Big 12 Conference', abbreviation: 'Big 12' },
+      { id: '8', name: 'Southeastern Conference', abbreviation: 'sec' },
+      { id: '5', name: 'Big Ten Conference', abbreviation: 'b1g' },
+      { id: '4', name: 'Big 12 Conference', abbreviation: 'big12' },
+      { id: '37', name: 'Sun Belt Conference', abbreviation: 'belt' },
+      { id: '151', name: 'American Athletic Conference', abbreviation: 'aac' },
     ],
   },
   'basketball/mens-college-basketball': {
     children: [
-      { id: '2', name: 'Atlantic Coast Conference', abbreviation: 'ACC' },
-      { id: '8', name: 'Big 12 Conference', abbreviation: 'Big 12' },
-      { id: '4', name: 'Big East Conference', abbreviation: 'Big East' },
-      { id: '23', name: 'Southeastern Conference', abbreviation: 'SEC' },
+      { id: '2', name: 'Atlantic Coast Conference', abbreviation: 'acc' },
+      { id: '8', name: 'Big 12 Conference', abbreviation: 'big12' },
+      { id: '4', name: 'Big East Conference', abbreviation: 'bigeast' },
+      { id: '23', name: 'Southeastern Conference', abbreviation: 'sec' },
+      { id: '26', name: 'Southwestern Athletic Conference', abbreviation: 'swac' },
     ],
   },
 };

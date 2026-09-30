@@ -99,34 +99,3 @@ export function periodShort(leagueId, n) {
   if (league.sport === 'hockey') return n <= 3 ? `P${n}` : n === 4 ? 'OT' : 'SO';
   return n <= 4 ? `Q${n}` : n === 5 ? 'OT' : `${n - 4}OT`;
 }
-
-// Fallback names for the main conferences, keyed by ESPN group id, used only
-// if the conference list can't be loaded from ESPN's standings.
-export const CONFERENCE_FALLBACK = {
-  cfb: {
-    1: 'ACC',
-    4: 'Big 12',
-    5: 'Big Ten',
-    8: 'SEC',
-    9: 'Pac-12',
-    12: 'C-USA',
-    15: 'MAC',
-    17: 'Mountain West',
-    18: 'FBS Independents',
-    37: 'Sun Belt',
-    151: 'American',
-  },
-  cbb: {
-    2: 'ACC',
-    3: 'Atlantic 10',
-    4: 'Big East',
-    7: 'Big Ten',
-    8: 'Big 12',
-    18: 'Missouri Valley',
-    21: 'Pac-12',
-    23: 'SEC',
-    29: 'West Coast',
-    44: 'Mountain West',
-    62: 'American',
-  },
-};

@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { normalizeConferences, normalizeScoreboard, normalizeSummary, scoreboardUrl, standingsUrl } from '../../src/lib/espn.js';
+import { CONFERENCE_FALLBACK, conferenceLabel } from '../../src/lib/conferences.js';
 import { LEAGUE_ORDER, LEAGUES, periodLabel, periodShort } from '../../src/lib/leagues.js';
 import { draftKingsUrl, matchDraftKings, normalizeDraftKings } from '../../src/lib/odds.js';
 import * as fx from '../fixtures/espn.js';
@@ -63,18 +64,48 @@ test('college basketball uses halves', () => {
   assert.deepEqual(g.scoringPlays, []);
 });
 
-test('conference list from standings', () => {
+test('conference list from standings uses the names fans know', () => {
   assert.equal(standingsUrl('cfb'), 'https://site.api.espn.com/apis/v2/sports/football/college-football/standings');
+  assert.deepEqual(
+    normalizeConferences(fx.STANDINGS['football/college-football']).map((c) => c.label),
+    ['American', 'Big 12', 'Big Ten', 'SEC', 'Sun Belt'],
+  );
   assert.deepEqual(normalizeConferences(fx.STANDINGS['basketball/mens-college-basketball']), [
     { id: '2', name: 'Atlantic Coast Conference', label: 'ACC' },
     { id: '8', name: 'Big 12 Conference', label: 'Big 12' },
     { id: '4', name: 'Big East Conference', label: 'Big East' },
     { id: '23', name: 'Southeastern Conference', label: 'SEC' },
-  ]);
-  assert.deepEqual(normalizeConferences({ children: [{ id: '99', name: 'Western Athletic Conference' }] }), [
-    { id: '99', name: 'Western Athletic Conference', label: 'Western Athletic' },
+    { id: '26', name: 'Southwestern Athletic Conference', label: 'SWAC' },
   ]);
   assert.deepEqual(normalizeConferences({}), []);
+});
+
+test('conference labels: known names, slugs, and unknown conferences', () => {
+  const cases = [
+    [{ name: 'Southeastern Conference', abbreviation: 'sec' }, 'SEC'],
+    [{ name: 'Sun Belt Conference', abbreviation: 'belt' }, 'Sun Belt'],
+    [{ name: 'Mid-American Conference', abbreviation: 'mac' }, 'MAC'],
+    [{ name: 'Pac-12 Conference', abbreviation: 'pac12' }, 'Pac-12'],
+    [{ name: 'Conference USA', abbreviation: 'cusa' }, 'C-USA'],
+    [{ name: 'The Summit League', abbreviation: 'summit' }, 'Summit League'],
+    [{ name: 'ASUN Conference', abbreviation: 'asun' }, 'ASUN'],
+    [{ name: 'Metro Atlantic Athletic Conference', abbreviation: 'maac' }, 'MAAC'],
+    [{ name: 'Mountain West Conference', abbreviation: 'mwc' }, 'Mountain West'],
+    // Name ESPN might word differently: fall back to the slug table.
+    [{ name: 'SEC', abbreviation: 'sec' }, 'SEC'],
+    [{ name: 'Sunbelt', abbreviation: 'belt' }, 'Sun Belt'],
+    // Unknown conference: tidy full name, never the raw slug.
+    [{ name: 'Great West Conference', abbreviation: 'gwc' }, 'Great West'],
+    [{ name: 'Pioneer Football League', abbreviation: 'pfl' }, 'Pioneer Football League'],
+    [{ name: '', abbreviation: 'xyz' }, 'XYZ'],
+  ];
+  for (const [input, label] of cases) assert.equal(conferenceLabel(input), label, JSON.stringify(input));
+});
+
+test('every built-in fallback name is already a display name', () => {
+  for (const league of Object.values(CONFERENCE_FALLBACK)) {
+    for (const label of Object.values(league)) assert.equal(conferenceLabel({ name: label }), label);
+  }
 });
 
 test('DraftKings college basketball names match ESPN schools', () => {

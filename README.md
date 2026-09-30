@@ -106,6 +106,7 @@ src/app/app.html|css|js  The UI; one page runs as popup, overlay (?mode=overlay)
 src/app/tick-worker.js   Refresh timer that isn't throttled when the window is hidden
 src/lib/espn.js          ESPN response → normalized games/box scores (pure functions)
 src/lib/odds.js          DraftKings feed and ESPN odds → one odds format; event matching
+src/lib/conferences.js   Conference display names ("SEC", "Sun Belt") for the college filter
 src/lib/api.js           Fetching with timeouts
 src/lib/leagues.js       League definitions and period labels
 src/lib/storage.js       Settings, favorites, UI state
