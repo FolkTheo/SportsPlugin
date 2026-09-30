@@ -2,17 +2,20 @@
 // manifest's host permissions (ESPN, DraftKings) let them fetch cross-origin.
 
 import {
+  normalizeConferences,
   normalizeScoreboard,
   normalizeSummary,
   normalizeTeamList,
   normalizeTeamOverview,
   scoreboardUrl,
+  standingsUrl,
   summaryUrl,
   teamScheduleUrl,
   teamsUrl,
   teamUrl,
 } from './espn.js';
 import { draftKingsUrl, normalizeDraftKings } from './odds.js';
+import { CONFERENCE_FALLBACK, LEAGUES } from './leagues.js';
 
 const TIMEOUT_MS = 10000;
 
@@ -100,5 +103,28 @@ export async function fetchDraftKingsOdds(leagueId) {
     const error = new Error(`DraftKings odds unavailable (${err.message})`);
     dkCache.set(leagueId, { at: Date.now(), error });
     throw error;
+  }
+}
+
+// Conference list for a college league (id -> name), cached for a week. If
+// ESPN's standings can't be loaded, fall back to the built-in main conferences.
+const CONFERENCES_TTL_MS = 7 * 24 * 3600 * 1000;
+
+export async function fetchConferences(leagueId) {
+  if (!LEAGUES[leagueId]?.college) return [];
+  const storageKey = `conferences:${leagueId}`;
+  const local = globalThis.chrome?.storage?.local;
+  const cached = local ? (await local.get(storageKey))[storageKey] : null;
+  if (cached && Date.now() - cached.at < CONFERENCES_TTL_MS && cached.list?.length) return cached.list;
+  try {
+    const list = normalizeConferences(await getJson(standingsUrl(leagueId)));
+    if (!list.length) throw new Error('no conferences in standings');
+    if (local) await local.set({ [storageKey]: { at: Date.now(), list } });
+    return list;
+  } catch (err) {
+    console.warn('Courtside: using built-in conference list', err);
+    return Object.entries(CONFERENCE_FALLBACK[leagueId] || {})
+      .map(([id, label]) => ({ id, name: label, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
   }
 }

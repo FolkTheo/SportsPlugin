@@ -696,10 +696,22 @@ export const FIXTURES = {
 };
 
 // Resolve an ESPN API URL to a fixture body (or null).
+// League-wide groups; any other `groups` value is a conference id.
+const ALL_GROUPS = new Set(['80', '50']);
+
 export function fixtureFor(url) {
-  const path = new URL(url).pathname;
+  const { pathname: path, searchParams } = new URL(url);
   let m = /\/sports\/([^/]+\/[^/]+)\/(scoreboard|summary)$/.exec(path);
-  if (m) return FIXTURES[m[1]]?.[m[2]] ?? null;
+  if (m) {
+    const body = FIXTURES[m[1]]?.[m[2]] ?? null;
+    const group = searchParams.get('groups');
+    if (!body || m[2] !== 'scoreboard' || !group || ALL_GROUPS.has(group)) return body;
+    // Like ESPN: games involving at least one team from that conference.
+    const inConf = (e) => e.competitions[0].competitors.some((c) => c.team.conferenceId === group);
+    return { ...body, events: body.events.filter(inConf) };
+  }
+  m = /\/apis\/v2\/sports\/([^/]+\/[^/]+)\/standings$/.exec(path);
+  if (m) return STANDINGS[m[1]] ?? null;
   m = /\/sports\/([^/]+\/[^/]+)\/teams\/(\d+)\/schedule$/.exec(path);
   if (m) return TEAM_SCHEDULES[m[1]]?.[m[2]] ?? { events: [] };
   m = /\/sports\/([^/]+\/[^/]+)\/teams\/(\d+)$/.exec(path);
@@ -873,4 +885,115 @@ export const TEAM_LISTS = {
   'baseball/mlb': teamListDoc(Object.values(MLB)),
   'hockey/nhl': teamListDoc(Object.values(NHL)),
   'football/college-football': teamListDoc(Object.values(CFB)),
+};
+
+// ---------------------------------------------------------------- CBB
+
+const withConf = (t, conferenceId) => Object.assign(t, { conferenceId });
+withConf(CFB.UGA, '8');
+withConf(CFB.ALA, '8');
+withConf(CFB.OSU, '5');
+withConf(CFB.PUR, '5');
+withConf(CFB.KSU, '4');
+withConf(CFB.BAY, '4');
+
+export const CBB = {
+  DUKE: withConf(team('ncaa', 150, 'DUKE', 'Duke', 'Blue Devils', '00539b'), '2'),
+  UNC: withConf(team('ncaa', 153, 'UNC', 'North Carolina', 'Tar Heels', '7bafd4'), '2'),
+  KU: withConf(team('ncaa', 2305, 'KU', 'Kansas', 'Jayhawks', '0051ba'), '8'),
+  UK: withConf(team('ncaa', 96, 'UK', 'Kentucky', 'Wildcats', '0033a0'), '23'),
+  CONN: withConf(team('ncaa', 41, 'CONN', 'UConn', 'Huskies', '000e2f'), '4'),
+  NOVA: withConf(team('ncaa', 222, 'NOVA', 'Villanova', 'Wildcats', '00205b'), '4'),
+};
+// ESPN's college shortDisplayName is the school, not the mascot.
+for (const t of Object.values(CBB)) t.shortDisplayName = t.location;
+
+export const cbbScoreboard = {
+  leagues: [{ abbreviation: 'NCAAM', calendar: [] }],
+  events: [
+    event(
+      '401820001',
+      competitor(CBB.UNC, 'away', { score: '57', record: '10-3', rank: 12, linescores: [35, 22], leaders: [nbaLeader(5001, 'RJ Davis', 'R. Davis', 'G', '19')] }),
+      competitor(CBB.DUKE, 'home', { score: '58', record: '12-1', rank: 3, linescores: [38, 20], leaders: [nbaLeader(5002, 'Cooper Flagg', 'C. Flagg', 'F', '21')] }),
+      status('in', { detail: '12:04 - 2nd Half', period: 2, clock: '12:04' }),
+      { broadcasts: ['ESPN'], date: '2026-09-28T23:00Z' },
+    ),
+    event(
+      '401820002',
+      competitor(CBB.UK, 'away', { record: '9-4' }),
+      competitor(CBB.KU, 'home', { record: '11-2', rank: 5 }),
+      status('pre', { detail: '9:00 PM EDT' }),
+      { broadcasts: ['CBS'], date: '2026-09-29T01:00Z' },
+    ),
+    event(
+      '401820003',
+      competitor(CBB.NOVA, 'away', { score: '68', record: '8-6', winner: false, linescores: [30, 38] }),
+      competitor(CBB.CONN, 'home', { score: '75', record: '10-4', winner: true, linescores: [36, 39] }),
+      status('post', { detail: 'Final', period: 2 }),
+      { date: '2026-09-28T19:00Z' },
+    ),
+  ],
+};
+
+export const cbbSummary = {
+  header: {
+    id: '401820001',
+    competitions: [
+      {
+        competitors: [
+          { homeAway: 'home', score: '58', rank: 3, team: CBB.DUKE, linescores: [{ displayValue: '38' }, { displayValue: '20' }] },
+          { homeAway: 'away', score: '57', rank: 12, team: CBB.UNC, linescores: [{ displayValue: '35' }, { displayValue: '22' }] },
+        ],
+        status: status('in', { detail: '12:04 - 2nd Half', period: 2, clock: '12:04' }),
+      },
+    ],
+  },
+  boxscore: {
+    teams: [
+      { team: CBB.UNC, statistics: [{ name: 'fieldGoalPct', displayValue: '44.2', label: 'Field Goal %' }] },
+      { team: CBB.DUKE, statistics: [{ name: 'fieldGoalPct', displayValue: '47.9', label: 'Field Goal %' }] },
+    ],
+    players: [
+      {
+        team: CBB.DUKE,
+        statistics: [
+          {
+            labels: ['MIN', 'FG', '3PT', 'FT', 'REB', 'AST', 'PTS'],
+            athletes: [{ starter: true, athlete: athlete(5002, 'Cooper Flagg', 'C. Flagg', 'F', '2'), stats: ['27', '8-14', '2-4', '3-3', '9', '4', '21'] }],
+            totals: ['', '23-48', '6-17', '6-8', '27', '12', '58'],
+          },
+        ],
+      },
+    ],
+  },
+  plays: [
+    { id: '1', text: 'Cooper Flagg made Dunk.', period: { number: 2, displayValue: '2nd Half' }, clock: { displayValue: '12:04' }, scoringPlay: true, awayScore: 57, homeScore: 58, team: { id: '150' } },
+  ],
+  gameInfo: { venue: { fullName: 'Cameron Indoor Stadium', address: { city: 'Durham', state: 'NC' } } },
+};
+
+FIXTURES['basketball/mens-college-basketball'] = { scoreboard: cbbScoreboard, summary: cbbSummary };
+TEAM_LISTS['basketball/mens-college-basketball'] = teamListDoc(Object.values(CBB));
+
+DK_FIXTURES[92483] = dkLeague([
+  { id: '92001', away: 'UNC Tar Heels', home: 'DUKE Blue Devils', start: '2026-09-28T23:00:00Z', status: 'STARTED', spread: [2.5, `${M}110`, `${M}110`], total: [148.5, `${M}110`, `${M}110`], ml: ['+120', `${M}145`] },
+]);
+
+// Standings: top-level children are the conferences (ids = `groups`).
+export const STANDINGS = {
+  'football/college-football': {
+    children: [
+      { id: '8', name: 'Southeastern Conference', abbreviation: 'SEC' },
+      { id: '5', name: 'Big Ten Conference', abbreviation: 'Big Ten' },
+      { id: '4', name: 'Big 12 Conference', abbreviation: 'Big 12' },
+    ],
+  },
+  'basketball/mens-college-basketball': {
+    children: [
+      { id: '2', name: 'Atlantic Coast Conference', abbreviation: 'ACC' },
+      { id: '8', name: 'Big 12 Conference', abbreviation: 'Big 12' },
+      { id: '4', name: 'Big East Conference', abbreviation: 'Big East' },
+      { id: '23', name: 'Southeastern Conference', abbreviation: 'SEC' },
+    ],
+  },
 };

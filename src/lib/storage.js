@@ -6,6 +6,8 @@ export const DEFAULT_SETTINGS = {
   refreshSeconds: 15,
   notifyFavorites: true,
   cfbTop25Only: false,
+  cbbTop25Only: false,
+  conferences: {}, // league -> ESPN conference group id ('' = all)
   compact: false,
   hideFinal: false,
   showOdds: true,

@@ -1,6 +1,6 @@
 # Courtside: live scores overlay for Chrome
 
-Courtside is a Chrome extension that shows live scores, box scores, player stats and **live DraftKings odds** for the **NFL, NBA, MLB, NHL and college football (FBS)**. You can float it over the game you're watching.
+Courtside is a Chrome extension that shows live scores, box scores, player stats and **live DraftKings odds** for the **NFL, NBA, MLB, NHL, college football (FBS) and men's college basketball (Division I)**. You can float it over the game you're watching.
 
 <p>
   <img src="docs/screenshots/overlay.png" alt="Scores overlaid on a video page" width="640" />
@@ -20,13 +20,14 @@ Your place (league, open game, tab) carries over between all three views.
 
 **Scoreboard** (each league has its own tab)
 - Live games first, then upcoming, then final. Favorite teams are pinned to the top.
-- Score, clock and period, records, and rankings (CFB).
+- Score, clock and period (halves for college basketball), records, and AP rankings for college teams.
 - Football: down and distance, a possession marker, and a red-zone flag.
 - Baseball: base runners on a diamond, balls-strikes and outs, and the current batter. Probable pitchers show before the game.
 - Game leaders (passing, rushing and receiving; points; and so on), plus the last play.
 - **DraftKings odds** on every upcoming and live game: spread, total and both moneylines, updated during play (marked **LIVE**, or "suspended" while DraftKings has betting paused).
 - TV network, playoff series status and game notes (for example "SEC Game of the Week").
-- Browse by week for football (including preseason and postseason) and by day for the NBA, MLB and NHL. College football can be filtered to the **Top 25**.
+- Browse by week for football (including preseason and postseason) and by day for the NBA, MLB, NHL and college basketball.
+- **College filters** (CFB and CBB): pick a **conference** from the dropdown to see only games involving its teams, including non-conference matchups. Turn on **Top 25** to see only games with a ranked team. The two combine (for example, ranked Big Ten games only), and each sport remembers its own choices. The conference list comes from ESPN's standings.
 
 **Game detail** (click any game)
 - A scorebug with team colors, a live situation panel and a win-probability bar.
@@ -129,7 +130,7 @@ The end-to-end run fills in for ESPN and DraftKings with the fixtures in `tests/
 | ![](docs/screenshots/popup-nfl.png) | ![](docs/screenshots/game-nfl-box.png) | ![](docs/screenshots/game-mlb.png) |
 | **Favorites** | **Team picker** | **DraftKings odds** |
 | ![](docs/screenshots/favorites.png) | ![](docs/screenshots/favorites-picker.png) | ![](docs/screenshots/game-nfl-odds.png) |
-| **College football** | **Team stats** | |
-| ![](docs/screenshots/popup-cfb.png) | ![](docs/screenshots/game-nfl-team.png) | |
+| **College basketball** | **Conference filter** | **Team stats** |
+| ![](docs/screenshots/popup-cbb.png) | ![](docs/screenshots/popup-cfb-conference.png) | ![](docs/screenshots/game-nfl-team.png) |
 
 The team logos in these screenshots are placeholders from the test fixtures. The real extension shows each team's actual logo from ESPN.

@@ -19,6 +19,7 @@ export const DK_LEAGUE_IDS = {
   mlb: 84240,
   nhl: 42133,
   cfb: 87637,
+  cbb: 92483,
 };
 
 export function draftKingsUrl(leagueId) {

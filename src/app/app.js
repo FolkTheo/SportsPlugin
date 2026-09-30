@@ -3,8 +3,8 @@
 //   overlay – inside the draggable frame the content script puts over a page
 //   window  – the pop-out window, which can also float on top via Document PiP
 
-import { LEAGUES, LEAGUE_ORDER } from '../lib/leagues.js';
-import { fetchDraftKingsOdds, fetchScoreboard, fetchSummary, fetchTeamOverview, fetchTeams } from '../lib/api.js';
+import { LEAGUES, LEAGUE_ORDER, periodShort } from '../lib/leagues.js';
+import { fetchConferences, fetchDraftKingsOdds, fetchScoreboard, fetchSummary, fetchTeamOverview, fetchTeams } from '../lib/api.js';
 import { sortGames } from '../lib/espn.js';
 import { matchDraftKings, mergeOdds, noVigProbabilities } from '../lib/odds.js';
 import * as store from '../lib/storage.js';
@@ -31,6 +31,7 @@ const state = {
   changed: new Set(), // "gameId:side" keys whose score just changed
   showSettings: false,
   picker: null, // { league, query, teams, error } while choosing favorite teams
+  conferences: {}, // college league -> [{ id, name, label }]
   pip: null,
 };
 
@@ -148,11 +149,30 @@ function schedule() {
 // Data loading
 
 function scoreboardQuery(leagueId) {
-  if (LEAGUES[leagueId].weekly) {
+  const def = LEAGUES[leagueId];
+  // A chosen conference replaces the league-wide group (all FBS / all D-I).
+  const conference = selectedConference(leagueId);
+  const query = conference ? { groups: conference } : {};
+  if (def.weekly) {
     const w = state.weekQuery;
-    return w ? { seasontype: w.seasontype, week: w.week, dates: w.year } : {};
+    if (w) Object.assign(query, { seasontype: w.seasontype, week: w.week, dates: w.year });
+  } else if (state.dayOffset !== 0) {
+    query.dates = ymd(offsetDate(state.dayOffset));
   }
-  return state.dayOffset === 0 ? {} : { dates: ymd(offsetDate(state.dayOffset)) };
+  return query;
+}
+
+function selectedConference(leagueId) {
+  return LEAGUES[leagueId]?.college ? state.settings.conferences?.[leagueId] || '' : '';
+}
+
+const top25Key = (leagueId) => `${leagueId}Top25Only`;
+
+async function ensureConferences(leagueId) {
+  if (!LEAGUES[leagueId]?.college || state.conferences[leagueId]) return;
+  state.conferences[leagueId] = []; // mark as loading
+  state.conferences[leagueId] = await fetchConferences(leagueId);
+  if (state.ui.league === leagueId) render();
 }
 
 function scoreboardKey() {
@@ -199,6 +219,7 @@ function recordChanges(prevGames, nextGames) {
 let loadSeq = 0;
 async function load({ quiet = false } = {}) {
   const seq = ++loadSeq;
+  if (state.ui.view !== 'game') ensureConferences(state.ui.league);
   ticker.clear();
   if (!quiet) {
     state.loading = true;
@@ -335,16 +356,36 @@ function renderSubbar() {
       <button class="nav-btn" data-action="day" data-dir="1" aria-label="Next day">›</button>
       ${state.dayOffset ? '<button class="chip" data-action="day" data-dir="0">Today</button>' : ''}`;
   }
-  const top25 =
-    league === 'cfb'
-      ? `<button class="chip${state.settings.cfbTop25Only ? ' on' : ''}" data-action="top25" title="Only show games with a ranked team">Top 25</button>`
-      : '';
-  return `<div class="subbar">${nav}<span class="spacer"></span>${top25}</div>`;
+  return `<div class="subbar">${nav}</div>${def.college ? collegeFilters(league) : ''}`;
+}
+
+function conferenceLabel(leagueId, id) {
+  return (state.conferences[leagueId] || []).find((c) => c.id === id)?.label || '';
+}
+
+function collegeFilters(league) {
+  const selected = selectedConference(league);
+  const list = state.conferences[league] || [];
+  const options = list.map((c) => `<option value="${esc(c.id)}" ${c.id === selected ? 'selected' : ''} title="${esc(c.name)}">${esc(c.label)}</option>`);
+  // Keep a saved choice visible even before the list has loaded.
+  if (selected && !list.some((c) => c.id === selected)) options.unshift(`<option value="${esc(selected)}" selected>Selected conference</option>`);
+  const top25 = state.settings[top25Key(league)];
+  return `
+    <div class="filterbar">
+      <label class="conf-filter${selected ? ' on' : ''}">
+        <span class="sr-only">Conference</span>
+        <select data-conference="${esc(league)}" aria-label="Filter by conference">
+          <option value="">All conferences</option>
+          ${options.join('')}
+        </select>
+      </label>
+      <button class="chip${top25 ? ' on' : ''}" data-action="top25" aria-pressed="${!!top25}" title="Only show games with a ranked team">Top 25</button>
+    </div>`;
 }
 
 function visibleGames() {
   let games = state.scoreboard?.games || [];
-  if (state.ui.league === 'cfb' && state.settings.cfbTop25Only) games = games.filter((g) => g.home.rank || g.away.rank);
+  if (LEAGUES[state.ui.league]?.college && state.settings[top25Key(state.ui.league)]) games = games.filter((g) => g.home.rank || g.away.rank);
   if (state.settings.hideFinal) games = games.filter((g) => g.status.state !== 'post');
   return sortGames(games, favKeys());
 }
@@ -357,8 +398,13 @@ function renderScores() {
   else {
     const games = visibleGames();
     if (!games.length) {
+      const conf = conferenceLabel(state.ui.league, selectedConference(state.ui.league));
       const msg =
-        state.settings.hideFinal && state.scoreboard?.games.length
+        state.scoreboard?.games.length && LEAGUES[state.ui.league]?.college && state.settings[top25Key(state.ui.league)]
+          ? `No games with a ranked team${conf ? ` in the ${conf}` : ''}.`
+          : conf && !state.scoreboard?.games.length
+            ? `No ${conf} games scheduled.`
+            : state.settings.hideFinal && state.scoreboard?.games.length
             ? 'All games are final. (Finished games are hidden in settings.)'
             : 'No games scheduled.';
       body = `<div class="empty">${esc(msg)}</div>`;
@@ -827,7 +873,7 @@ function playsList(g) {
     .map((p) => {
       const team = teamById(g, p.teamId);
       const score = p.scoring && p.awayScore !== null ? ` <span class="play-score">${esc(g.away.abbr)} ${esc(p.awayScore)}–${esc(p.homeScore)} ${esc(g.home.abbr)}</span>` : '';
-      const period = p.periodNumber && g.sport !== 'baseball' ? periodShort(g, p.periodNumber) : p.period;
+      const period = p.periodNumber && g.sport !== 'baseball' ? periodShort(g.league, p.periodNumber) : p.period;
       return `<li class="${p.scoring ? 'scoring' : ''}"><span class="when">${esc([period, p.clock].filter(Boolean).join(' '))}</span>${
         team ? logo(team, 14) : ''
       }<span class="text">${esc(p.text)}${score}</span></li>`;
@@ -835,16 +881,11 @@ function playsList(g) {
     .join('')}</ol>`;
 }
 
-function periodShort(g, n) {
-  if (g.sport === 'hockey') return n <= 3 ? `P${n}` : n === 4 ? 'OT' : 'SO';
-  return n <= 4 ? `Q${n}` : n === 5 ? 'OT' : `${n - 4}OT`;
-}
-
 function scoringList(g) {
   let lastPeriod = null;
   return `<ol class="plays scoring-list">${g.scoringPlays
     .map((p) => {
-      const heading = p.period !== lastPeriod && p.period ? `<li class="period-head">${esc(g.sport === 'baseball' ? `Inning ${p.period}` : periodShort(g, p.period))}</li>` : '';
+      const heading = p.period !== lastPeriod && p.period ? `<li class="period-head">${esc(g.sport === 'baseball' ? `Inning ${p.period}` : periodShort(g.league, p.period))}</li>` : '';
       lastPeriod = p.period;
       const team = teamById(g, p.teamId);
       return `${heading}<li><span class="when">${esc(p.clock)}</span>${team ? logo(team, 16) : p.teamLogo ? `<img class="logo" src="${esc(p.teamLogo)}" width="16" height="16" alt="" />` : ''}<span class="text">${
@@ -965,6 +1006,7 @@ function renderSettings() {
       ${check('hideFinal', 'Hide finished games')}
       ${check('showOdds', 'Show DraftKings odds', 'Spread, total and moneyline on each game, updated live during play')}
       ${check('cfbTop25Only', 'College football: Top 25 only')}
+      ${check('cbbTop25Only', 'College basketball: Top 25 only')}
       <h3>Updates</h3>
       <label class="set-row"><span>Live refresh every</span>
         <select data-setting="refreshSeconds">${[10, 15, 30, 60]
@@ -1017,7 +1059,8 @@ const actions = {
     load();
   },
   async top25() {
-    state.settings = await store.saveSettings({ cfbTop25Only: !state.settings.cfbTop25Only });
+    const key = top25Key(state.ui.league);
+    state.settings = await store.saveSettings({ [key]: !state.settings[key] });
     render();
   },
   async 'open-game'(el) {
@@ -1122,6 +1165,12 @@ root.addEventListener('input', (e) => {
 });
 
 root.addEventListener('change', async (e) => {
+  const confLeague = e.target.dataset?.conference;
+  if (confLeague) {
+    state.settings = await store.saveSettings({ conferences: { ...state.settings.conferences, [confLeague]: e.target.value } });
+    load();
+    return;
+  }
   const key = e.target.dataset?.setting;
   if (!key) return;
   const value = e.target.type === 'checkbox' ? e.target.checked : Number(e.target.value);

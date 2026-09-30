@@ -3,7 +3,7 @@
   "name": "Courtside – Live Scores Overlay",
   "short_name": "Courtside",
   "version": "1.0.0",
-  "description": "Live scores, box scores, player stats and DraftKings odds for the NFL, NBA, MLB, NHL and college football, in a pop-up that floats over the game you're watching.",
+  "description": "Live scores, stats and DraftKings odds for the NFL, NBA, MLB, NHL and college football and basketball, floating over your game.",
   "minimum_chrome_version": "116",
   "icons": {
     "16": "icons/icon16.png",

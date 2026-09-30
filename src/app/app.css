@@ -106,7 +106,7 @@ button {
 }
 
 .mode-overlay .tab {
-  padding: 6px 6px;
+  padding: 6px 5px;
   font-size: 11px;
 }
 
@@ -509,7 +509,7 @@ button {
 
 .game-status {
   flex: none;
-  width: 82px;
+  width: 100px; /* fits "12:04 - 2nd Half" / "Tue 1:00 AM" on one line */
   display: grid;
   gap: 2px;
   justify-items: end;
@@ -519,10 +519,11 @@ button {
 }
 
 .compact .game-status {
-  width: 70px;
+  width: 96px;
 }
 
 .status-text {
+  white-space: nowrap;
   font-size: 11px;
   font-weight: 700;
   color: var(--muted);
@@ -1431,5 +1432,65 @@ table.box tr.totals th {
 }
 
 body.mode-popup .tab {
-  padding: 6px 8px;
+  padding: 6px 6px;
+}
+
+/* ------------------------------------------------------- college filters */
+
+.filterbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: -2px 2px 8px;
+}
+
+.conf-filter {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.conf-filter select {
+  width: 100%;
+  appearance: none;
+  padding: 4px 26px 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-overflow: ellipsis;
+}
+
+.conf-filter::after {
+  content: '▾';
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  font-size: 10px;
+  pointer-events: none;
+}
+
+.conf-filter.on select {
+  border-color: var(--accent);
+  color: var(--text);
+  background: rgb(59 158 255 / 0.15);
+}
+
+.conf-filter select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }

@@ -25,6 +25,12 @@ export function teamsUrl(leagueId) {
   return `${API_ROOT}/${LEAGUES[leagueId].path}/teams?${params}`;
 }
 
+// Standings live under /apis/v2 (not /apis/site/v2); for college leagues the
+// top-level children are the conferences, with ids that match `groups`.
+export function standingsUrl(leagueId) {
+  return `https://site.api.espn.com/apis/v2/sports/${LEAGUES[leagueId].path}/standings`;
+}
+
 export function teamUrl(leagueId, teamId) {
   return `${API_ROOT}/${LEAGUES[leagueId].path}/teams/${encodeURIComponent(teamId)}`;
 }
@@ -103,6 +109,7 @@ export function normalizeCompetitor(c = {}) {
     fullName: team.displayName || team.name || '',
     nickname: team.name || '',
     location: team.location || '',
+    conferenceId: str(team.conferenceId),
     logo: logoOf(team),
     color: team.color ? `#${team.color}` : '',
     score: scoreOf(c),
@@ -238,7 +245,7 @@ export function normalizeEvent(event, leagueId) {
     name: event.name || '',
     shortName: event.shortName || `${away.abbr} @ ${home.abbr}`,
     status,
-    periodLabel: periodLabel(league.sport, status.period),
+    periodLabel: periodLabel(league.sport, status.period, { halves: league.halves }),
     home,
     away,
     situation,
@@ -312,10 +319,11 @@ export function normalizeScoreboard(json, leagueId) {
 // ---------------------------------------------------------------------------
 // Game summary (box score, team stats, plays)
 
-function linescoreLabels(sport, count) {
+function linescoreLabels(sport, count, halves = false) {
   const labels = [];
   for (let i = 1; i <= count; i++) {
     if (sport === 'baseball') labels.push(String(i));
+    else if (halves) labels.push(i <= 2 ? String(i) : i === 3 ? 'OT' : `${i - 2}OT`);
     else if (sport === 'hockey') labels.push(i <= 3 ? String(i) : i === 4 ? 'OT' : i === 5 ? 'SO' : `${i - 3}OT`);
     else labels.push(i <= 4 ? String(i) : i === 5 ? 'OT' : `${i - 4}OT`);
   }
@@ -477,7 +485,7 @@ export function normalizeSummary(json, leagueId) {
   const pad = (ls) => Array.from({ length: periods }, (_, i) => ls[i] ?? '');
   const linescore = periods
     ? {
-        labels: linescoreLabels(sport, periods),
+        labels: linescoreLabels(sport, periods, league.halves),
         away: pad(away.linescores),
         home: pad(home.linescores),
       }
@@ -502,7 +510,7 @@ export function normalizeSummary(json, leagueId) {
     sport,
     date: comp.date || '',
     status,
-    periodLabel: periodLabel(sport, status.period),
+    periodLabel: periodLabel(sport, status.period, { halves: league.halves }),
     home,
     away,
     situation,
@@ -597,4 +605,23 @@ export function normalizeTeamOverview(teamJson, scheduleJson, leagueId) {
     next,
     last,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Conferences (college filter)
+
+export function normalizeConferences(json) {
+  return arr(json?.children)
+    .map((c) => {
+      const name = str(c.name);
+      const abbr = str(c.abbreviation || c.shortName);
+      return {
+        id: str(c.id),
+        name,
+        // "SEC", "Big Ten": short enough for a dropdown; otherwise the full name.
+        label: abbr && abbr.length <= 16 ? abbr : name.replace(/\s+Conference$/i, ''),
+      };
+    })
+    .filter((c) => c.id && c.name)
+    .sort((a, b) => a.label.localeCompare(b.label));
 }

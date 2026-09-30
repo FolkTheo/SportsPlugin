@@ -150,6 +150,60 @@ await step('CFB Top 25 filter hides unranked matchups', async () => {
   await popup.click('[data-action="top25"]');
 });
 
+await step('CFB conference filter asks ESPN for that conference', async () => {
+  await popup.waitForSelector('[data-conference="cfb"] option[value="8"]', { state: 'attached' });
+  await popup.selectOption('[data-conference="cfb"]', '8');
+  await popup.waitForFunction(() => document.querySelectorAll('.game').length === 1);
+  assert.ok(requests.some((u) => /college-football\/scoreboard\?groups=8&limit=400/.test(u)), 'groups=8 sent');
+  assert.match(await popup.locator('.game').innerText(), /Crimson Tide[\s\S]*Bulldogs/);
+  assert.equal(await popup.locator('.conf-filter.on').count(), 1);
+  await popup.screenshot({ path: `${SHOTS}/popup-cfb-conference.png` });
+  await popup.selectOption('[data-conference="cfb"]', '');
+  await popup.waitForFunction(() => document.querySelectorAll('.game').length === 3);
+});
+
+await step("men's college basketball: halves, ranks, DraftKings odds", async () => {
+  await popup.click('.tab[data-league="cbb"]');
+  await popup.waitForSelector('.game[data-league="cbb"].state-in');
+  assert.equal(await popup.locator('.game').count(), 3);
+  const live = await popup.locator('.game.state-in').innerText();
+  assert.match(live, /12[\s\S]*North Carolina[\s\S]*57[\s\S]*3[\s\S]*Duke[\s\S]*58/);
+  assert.match(live, /12:04 - 2nd Half/);
+  await popup.waitForSelector('.game.state-in .odds-line');
+  assert.match(await popup.locator('.game.state-in .odds-line').innerText(), /DUKE -2\.5 · O\/U 148\.5 · ML UNC \+120 DUKE -145\s*LIVE/);
+  await popup.screenshot({ path: `${SHOTS}/popup-cbb.png` });
+});
+
+await step('CBB conference + Top 25 filters combine and persist', async () => {
+  await popup.waitForSelector('[data-conference="cbb"] option[value="4"]', { state: 'attached' });
+  await popup.selectOption('[data-conference="cbb"]', '2'); // ACC
+  await popup.waitForFunction(() => document.querySelectorAll('.game').length === 1);
+  assert.ok(requests.some((u) => /mens-college-basketball\/scoreboard\?groups=2&limit=400/.test(u)), 'groups=2 sent');
+  await popup.selectOption('[data-conference="cbb"]', '4'); // Big East: one unranked final
+  await popup.waitForFunction(() => /Villanova/.test(document.querySelector('.game')?.innerText || ''));
+  await popup.click('[data-action="top25"]');
+  await popup.waitForSelector('.empty');
+  assert.match(await popup.locator('.empty').innerText(), /No games with a ranked team in the Big East/);
+  // Choices are saved: reopen the popup.
+  await popup.reload();
+  await popup.waitForSelector('.empty');
+  assert.equal(await popup.locator('[data-conference="cbb"]').inputValue(), '4');
+  assert.equal(await popup.locator('[data-action="top25"].on').count(), 1);
+  await popup.selectOption('[data-conference="cbb"]', '');
+  await popup.waitForFunction(() => document.querySelectorAll('.game').length === 2); // ranked teams only
+  await popup.click('[data-action="top25"]');
+  await popup.waitForFunction(() => document.querySelectorAll('.game').length === 3);
+});
+
+await step('CBB game detail uses halves', async () => {
+  await popup.click('.game.state-in');
+  await popup.waitForSelector('.linescore');
+  assert.deepEqual(await popup.locator('.linescore thead th').allInnerTexts(), ['', '1', '2', 'T']);
+  await popup.click('[data-action="game-tab"][data-tab="plays"]');
+  assert.match(await popup.locator('.plays li').first().innerText(), /^H2 12:04/);
+  await popup.click('[data-action="back"]');
+});
+
 await step('MLB day navigation sends a date', async () => {
   await popup.click('.tab[data-league="mlb"]');
   await popup.waitForSelector('.game[data-league="mlb"]');
@@ -163,6 +217,7 @@ await step('MLB game detail: bases, count, R/H/E, batting + pitching', async () 
   await popup.click('.game.state-in');
   await popup.waitForSelector('.scorebug');
   await popup.waitForSelector('.linescore');
+  await popup.click('[data-action="game-tab"][data-tab="box"]');
   const text = await popup.locator('.content').innerText();
   assert.match(text, /2-1 · 1 out/);
   assert.match(text, /P: G\. Cole/);
