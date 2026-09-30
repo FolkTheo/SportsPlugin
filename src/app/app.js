@@ -10,6 +10,8 @@ import { matchDraftKings, mergeOdds, noVigProbabilities } from '../lib/odds.js';
 import * as store from '../lib/storage.js';
 
 const MODE = new URLSearchParams(location.search).get('mode') || 'window';
+// Set by the Mac app's bridge (mac/CourtsideApp/Web/native-shim.js); null in Chrome.
+const NATIVE = globalThis.courtsideNative || null;
 const root = document.getElementById('app');
 const $ = (sel) => root.querySelector(sel);
 
@@ -105,15 +107,23 @@ const ticker = (() => {
   let seq = 0;
   let callback = null;
   let fallback = null;
+  let lastDelay = 0;
   try {
     worker = new Worker('tick-worker.js');
     worker.onmessage = ({ data }) => data === seq && callback?.();
+    // A worker that fails to load (e.g. a host that doesn't allow them)
+    // errors asynchronously; switch to plain timers so refresh never stalls.
+    worker.onerror = () => {
+      worker = null;
+      if (callback) fallback = setTimeout(callback, lastDelay);
+    };
   } catch {
     worker = null;
   }
   return {
     set(delayMs, fn) {
       callback = fn;
+      lastDelay = delayMs;
       seq += 1;
       clearTimeout(fallback);
       if (worker) worker.postMessage({ id: seq, delay: delayMs });
@@ -1012,14 +1022,39 @@ function renderSettings() {
         <select data-setting="refreshSeconds">${[10, 15, 30, 60]
           .map((n) => `<option value="${n}" ${s.refreshSeconds === n ? 'selected' : ''}>${n} seconds</option>`)
           .join('')}</select></label>
-      ${check('notifyFavorites', 'Notify me when my teams score', 'Also shows live favorite games on the toolbar icon')}
+      ${check('notifyFavorites', 'Notify me when my teams score', `Also shows live favorite games on the ${NATIVE ? 'menu bar' : 'toolbar icon'}`)}
       <h3>My teams</h3>
       ${favs}
       <button class="btn" data-action="add-teams">+ Add teams</button>
+      ${NATIVE ? nativeSettings() : chromeShortcuts()}
+    </div>`;
+}
+
+function chromeShortcuts() {
+  return `
       <h3>Shortcuts</h3>
       <p class="muted">Alt+Shift+S toggles the overlay on the current page. Alt+Shift+P opens the pop-out window.
-      <button class="link" data-action="shortcuts">Change shortcuts</button></p>
-    </div>`;
+      <button class="link" data-action="shortcuts">Change shortcuts</button></p>`;
+}
+
+function nativeSettings() {
+  // The checkbox state is filled in once the app answers (see refreshLoginItem).
+  return `
+      <h3>Mac app</h3>
+      <label class="set-row"><input type="checkbox" data-native-login /><span>Open Courtside at login</span></label>
+      <p class="muted">Add the scores widget to your desktop: right-click the desktop, choose <b>Edit Widgets</b>, and search for Courtside.</p>
+      <button class="btn" data-action="popout">Float on desktop</button>
+      <button class="btn" data-action="native-quit">Quit Courtside</button>`;
+}
+
+async function refreshLoginItem() {
+  const box = $('[data-native-login]');
+  if (!NATIVE || !box) return;
+  try {
+    box.checked = !!(await NATIVE.call({ type: 'get-login-item' }));
+  } catch {
+    box.closest('.set-row').hidden = true;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1125,6 +1160,7 @@ const actions = {
     state.picker = null;
     state.showSettings = !state.showSettings;
     render();
+    refreshLoginItem();
     if (!state.showSettings) load({ quiet: true });
   },
   refresh() {
@@ -1142,6 +1178,9 @@ const actions = {
   async popout() {
     await chrome.runtime.sendMessage({ type: 'open-popout' });
     if (MODE === 'popup') window.close();
+  },
+  'native-quit'() {
+    NATIVE?.call({ type: 'quit' });
   },
   pip() {
     enterPip().catch((err) => toast(`Couldn't keep on top: ${err.message}`));
@@ -1165,6 +1204,15 @@ root.addEventListener('input', (e) => {
 });
 
 root.addEventListener('change', async (e) => {
+  if (e.target.matches?.('[data-native-login]')) {
+    try {
+      await NATIVE.call({ type: 'set-login-item', enabled: e.target.checked });
+    } catch (err) {
+      e.target.checked = !e.target.checked;
+      toast(`Couldn't change the login item: ${err.message || err}`);
+    }
+    return;
+  }
   const confLeague = e.target.dataset?.conference;
   if (confLeague) {
     state.settings = await store.saveSettings({ conferences: { ...state.settings.conferences, [confLeague]: e.target.value } });
@@ -1223,6 +1271,12 @@ function applyMode() {
     el.hidden = !el.dataset.only.split(' ').includes(MODE);
   }
   if (MODE === 'window' && !('documentPictureInPicture' in window)) $('[data-action="pip"]').hidden = true;
+  if (NATIVE) {
+    // On the Mac the pop-out is an always-on-top panel.
+    const popout = $('[data-action="popout"]');
+    popout.title = 'Float on desktop (stays on top of other windows)';
+    popout.setAttribute('aria-label', 'Float on desktop');
+  }
 }
 
 async function init() {

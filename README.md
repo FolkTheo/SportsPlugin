@@ -52,6 +52,10 @@ Your place (league, open game, tab) carries over between all three views.
 
 Live games refresh automatically (every 15 seconds by default). Updates slow down when nothing is live and pause while the view is hidden.
 
+## Mac app
+
+Courtside also runs as a **Mac menu bar app with a desktop widget and an always-on-top window**. It uses the same interface as the extension. See [`mac/README.md`](mac/README.md) for how to build it in Xcode.
+
 ## Install (developer mode)
 
 1. Download or clone this repository.
@@ -120,6 +124,7 @@ There is no build step: plain ES modules that Chrome loads directly.
 ```sh
 npm test            # unit tests for the ESPN and odds parsers (Node 20+)
 npm run test:e2e    # loads the extension in Chromium with Playwright, using fixture data
+npm run test:mac-bridge  # runs the interface through the Mac app's bridge, with a stand-in for Swift
 ```
 
 The end-to-end run fills in for ESPN and DraftKings with the fixtures in `tests/fixtures/espn.js`. It then exercises every league, odds (including the ESPN fallback when DraftKings is blocked), game detail tabs, favorites (team cards, the picker, removal) and the badge, settings, error recovery, the overlay (drag, resize, transparency, minimize, fullscreen, toggle) and the pop-out window. Screenshots are saved to `tests/e2e/screenshots/`.

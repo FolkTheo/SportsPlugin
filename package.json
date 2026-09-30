@@ -8,6 +8,7 @@
     "test": "node --test tests/unit/*.test.js",
     "test:e2e": "node tests/e2e/run.mjs",
     "icons": "node scripts/build-icons.mjs",
-    "package": "node scripts/package.mjs"
+    "package": "node scripts/package.mjs",
+    "test:mac-bridge": "node tests/e2e/native-bridge.mjs"
   }
 }

@@ -26,6 +26,13 @@ body {
   color: var(--text);
 }
 
+/* Chrome gives extension pages "body { font-size: 75% }" and its own font.
+   Say it here too, so the Mac app's plain web view renders the same. */
+body {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 75%;
+}
+
 body.mode-popup {
   width: 380px;
   height: 580px;
@@ -33,8 +40,10 @@ body.mode-popup {
 
 body.mode-overlay,
 body.mode-window,
+body.mode-menubar,
 html:has(body.mode-overlay),
-html:has(body.mode-window) {
+html:has(body.mode-window),
+html:has(body.mode-menubar) {
   height: 100%;
   overflow: hidden;
 }
@@ -1431,7 +1440,8 @@ table.box tr.totals th {
   margin-top: 6px;
 }
 
-body.mode-popup .tab {
+body.mode-popup .tab,
+body.mode-menubar .tab {
   padding: 6px 6px;
 }
 

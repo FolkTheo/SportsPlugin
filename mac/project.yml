@@ -1,0 +1,91 @@
+# Xcode project for Courtside for Mac, generated with XcodeGen:
+#   brew install xcodegen && cd mac && xcodegen generate && open Courtside.xcodeproj
+# See mac/README.md.
+name: Courtside
+options:
+  deploymentTarget:
+    macOS: "14.0" # desktop widgets and AppIntent widget configuration
+  createIntermediateGroups: true
+settings:
+  base:
+    # Change this to something unique to you (e.g. com.yourname.courtside);
+    # Apple requires app ids to be unique per developer account.
+    COURTSIDE_BUNDLE_ID: com.example.courtside
+    # Your 10-character Apple team id (Xcode > Settings > Accounts; a free
+    # Apple ID works for running on your own Mac). Put it here so it survives
+    # regenerating the project.
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    ENABLE_HARDENED_RUNTIME: YES
+targets:
+  Courtside:
+    type: application
+    platform: macOS
+    sources:
+      - path: CourtsideApp
+        excludes: [Web]
+      - path: Shared
+      # Injected into the web views (Bundle.main "native-shim.js").
+      - path: CourtsideApp/Web/native-shim.js
+        buildPhase: resources
+      # The Chrome extension's UI and icons, bundled as-is and served at
+      # courtside-app://app/src/app/app.html. Edit them in ../src; both the
+      # extension and the Mac app pick up the change.
+      - path: ../src
+        type: folder
+        buildPhase: resources
+      - path: ../icons
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - target: CourtsideWidget
+    info:
+      path: CourtsideApp/Info.plist
+      properties:
+        CFBundleDisplayName: Courtside
+        LSApplicationCategoryType: public.app-category.sports
+        LSUIElement: true # menu bar app: no Dock icon
+        AppGroupIdentifier: $(TeamIdentifierPrefix)courtside
+        CFBundleURLTypes:
+          - CFBundleURLName: $(PRODUCT_BUNDLE_IDENTIFIER)
+            CFBundleURLSchemes: [courtside]
+    entitlements:
+      path: CourtsideApp/Courtside.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        com.apple.security.application-groups: [$(TeamIdentifierPrefix)courtside]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(COURTSIDE_BUNDLE_ID)
+        PRODUCT_NAME: Courtside
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+
+  CourtsideWidget:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: CourtsideWidget
+      - path: Shared
+    info:
+      path: CourtsideWidget/Info.plist
+      properties:
+        CFBundleDisplayName: Courtside
+        AppGroupIdentifier: $(TeamIdentifierPrefix)courtside
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: CourtsideWidget/CourtsideWidget.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        com.apple.security.application-groups: [$(TeamIdentifierPrefix)courtside]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(COURTSIDE_BUNDLE_ID).widget
+        PRODUCT_NAME: CourtsideWidget
+        SKIP_INSTALL: YES
